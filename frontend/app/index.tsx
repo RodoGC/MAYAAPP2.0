@@ -1,16 +1,60 @@
-import { Text, View, StyleSheet, Image } from "react-native";
-
-const EXPO_PUBLIC_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../contexts/AuthContext';
+import { useEffect } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function Index() {
-  console.log(EXPO_PUBLIC_BACKEND_URL, "EXPO_PUBLIC_BACKEND_URL");
+  const router = useRouter();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace('/(tabs)');
+    }
+  }, [user, loading]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Cargando...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require("../assets/images/app-image.png")}
-        style={styles.image}
-      />
+      <View style={styles.header}>
+        <Text style={styles.logo}>🏛️</Text>
+        <Text style={styles.title}>Maay</Text>
+        <Text style={styles.subtitle}>Aprende Maya Yucateco</Text>
+      </View>
+
+      <View style={styles.content}>
+        <Text style={styles.description}>
+          Aprende el idioma Maya de forma divertida y efectiva
+        </Text>
+        <Text style={styles.features}>✨ Lecciones interactivas</Text>
+        <Text style={styles.features}>🎯 Sistema de puntos XP</Text>
+        <Text style={styles.features}>🔥 Mantén tu racha diaria</Text>
+        <Text style={styles.features}>📚 Diccionario completo</Text>
+      </View>
+
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity 
+          style={styles.primaryButton}
+          onPress={() => router.push('/signup')}
+        >
+          <Text style={styles.primaryButtonText}>Comenzar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.secondaryButton}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={styles.secondaryButtonText}>Ya tengo cuenta</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -18,13 +62,86 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0c0c0c",
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: '#1CB0F6',
+    justifyContent: 'space-between',
+    padding: 24,
   },
-  image: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1CB0F6',
+  },
+  loadingText: {
+    color: '#FFF',
+    fontSize: 18,
+  },
+  header: {
+    alignItems: 'center',
+    marginTop: 80,
+  },
+  logo: {
+    fontSize: 80,
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#FFF',
+    opacity: 0.9,
+  },
+  content: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  description: {
+    fontSize: 20,
+    color: '#FFF',
+    textAlign: 'center',
+    marginBottom: 24,
+    fontWeight: '600',
+  },
+  features: {
+    fontSize: 16,
+    color: '#FFF',
+    textAlign: 'center',
+  },
+  buttonContainer: {
+    gap: 16,
+    marginBottom: 40,
+  },
+  primaryButton: {
+    backgroundColor: '#58CC02',
+    padding: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  primaryButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  secondaryButton: {
+    backgroundColor: '#FFF',
+    padding: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1CB0F6',
+  },
+  secondaryButtonText: {
+    color: '#1CB0F6',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });
