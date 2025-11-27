@@ -913,6 +913,7 @@ def calculate_level(xp: int) -> int:
 
 @api_router.post("/auth/signup", response_model=Token)
 async def signup(user_data: UserSignup):
+    print(f"DEBUG: Signup request received for {user_data.email}")
     # Check if user exists
     existing_user = await db.users.find_one({"email": user_data.email})
     if existing_user:
@@ -1176,7 +1177,7 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:8081", "http://localhost:8001", "http://127.0.0.1:8081", "http://127.0.0.1:8001"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
