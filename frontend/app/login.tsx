@@ -27,12 +27,20 @@ export default function Login() {
       return;
     }
 
+    console.log('Attempting login with:', email);
     setLoading(true);
     try {
       await login(email, password);
+      console.log('Login successful');
       router.replace('/(tabs)');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Error al iniciar sesión');
+      console.error('Login error:', error);
+      const errorMessage = error.response?.data?.detail || 'Error al iniciar sesión. Verifica tu conexión.';
+      if (Platform.OS === 'web') {
+        window.alert(errorMessage);
+      } else {
+        Alert.alert('Error', errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -44,7 +52,7 @@ export default function Login() {
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
         >
