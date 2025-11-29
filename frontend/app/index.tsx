@@ -26,29 +26,19 @@ export default function Index() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.logo}>🏛️</Text>
-        <Text style={styles.title}>Maay</Text>
+        <Text style={styles.title}>MayaApp</Text>
         <Text style={styles.subtitle}>Aprende Maya Yucateco</Text>
       </View>
 
-      <View style={styles.content}>
-        <Text style={styles.description}>
-          Aprende el idioma Maya de forma divertida y efectiva
-        </Text>
-        <Text style={styles.features}>✨ Lecciones interactivas</Text>
-        <Text style={styles.features}>🎯 Sistema de puntos XP</Text>
-        <Text style={styles.features}>🔥 Mantén tu racha diaria</Text>
-        <Text style={styles.features}>📚 Diccionario completo</Text>
-      </View>
-
       <View style={styles.buttonContainer}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.primaryButton}
           onPress={() => router.push('/signup')}
         >
           <Text style={styles.primaryButtonText}>Comenzar</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.secondaryButton}
           onPress={() => router.push('/login')}
         >
@@ -62,7 +52,7 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1CB0F6',
+    backgroundColor: '#000000',
     justifyContent: 'space-between',
     padding: 24,
   },
@@ -70,7 +60,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1CB0F6',
+    backgroundColor: '#000000',
   },
   loadingText: {
     color: '#FFF',
@@ -78,7 +68,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginTop: 80,
+    marginTop: 120,
   },
   logo: {
     fontSize: 80,
@@ -95,25 +85,9 @@ const styles = StyleSheet.create({
     color: '#FFF',
     opacity: 0.9,
   },
-  content: {
-    alignItems: 'center',
-    gap: 12,
-  },
-  description: {
-    fontSize: 20,
-    color: '#FFF',
-    textAlign: 'center',
-    marginBottom: 24,
-    fontWeight: '600',
-  },
-  features: {
-    fontSize: 16,
-    color: '#FFF',
-    textAlign: 'center',
-  },
   buttonContainer: {
     gap: 16,
-    marginBottom: 40,
+    marginBottom: 60,
   },
   primaryButton: {
     backgroundColor: '#58CC02',
@@ -132,7 +106,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   secondaryButton: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#000',
     padding: 18,
     borderRadius: 16,
     alignItems: 'center',

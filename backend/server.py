@@ -12,13 +12,15 @@ from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from bson import ObjectId
+import requests
+from fastapi.responses import StreamingResponse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
 db = client[os.environ['DB_NAME']]
 
 # Security
@@ -724,19 +726,20 @@ UNIT_TIPS = {
         "grammar": [
             "El Maya Yucateco usa sonidos que no existen en español, como la oclusiva glotal (')",
             "Los saludos varían según el contexto formal o informal",
-            "'Ba'ax ka wa'alik' literalmente significa '¿qué dices?'"
+            "'Ba'ax ka wa'alik' literalmente significa '¿qué dices?' y es un saludo informal común.",
+            "Para responder a 'Ba'ax ka wa'alik', puedes decir 'Ma'alob' (Bien) o 'Mix ba'al' (Nada nuevo)."
         ],
         "pronunciation": [
-            "' (apóstrofe): representa una pausa glotal, como en 'uh-oh'",
-            "x: se pronuncia como 'sh' en inglés",
-            "k': se pronuncia con más fuerza que una 'k' normal"
+            "' (apóstrofe): representa una pausa glotal, un corte repentino de aire (como en 'uh-oh').",
+            "x: se pronuncia como 'sh' en inglés (ej. 'Xen' suena como 'Shen').",
+            "k': se pronuncia con más fuerza que una 'k' normal, desde la garganta."
         ],
         "vocabulary": [
-            "Ba'ax ka wa'alik - Hola (¿qué dices?)",
-            "Nib óolal - Gracias",
-            "Bix a beel - ¿Cómo estás?",
-            "Ma'alob - Bien",
-            "Xen ich utsil - Adiós"
+            "Ba'ax ka wa'alik - Hola / ¿Qué onda?",
+            "Nib óolal - Gracias (literalmente 'gran corazón')",
+            "Bix a beel - ¿Cómo estás? (más formal)",
+            "Ma'alob - Bien / Bueno",
+            "Xen ich utsil - Adiós (Que te vaya bien)"
         ]
     },
     2: {
@@ -980,6 +983,46 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         "level": calculate_level(current_user.get("xp", 0))
     }
 
+# ============= AUDIO PROXY ENDPOINT =============
+
+class SpeakRequest(BaseModel):
+    text: str
+    api_key: str
+    region: str = "centralus"
+
+@api_router.post("/speak")
+async def speak_proxy(request: SpeakRequest):
+    url = "https://api.cognitive.microsofttranslator.com/speak"
+    params = {
+        "api-version": "3.0",
+        "language": "yua-MX",
+        "format": "audio/mp3",
+        "options": "Male"
+    }
+    headers = {
+        "Ocp-Apim-Subscription-Key": request.api_key,
+        "Ocp-Apim-Subscription-Region": request.region,
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        # Microsoft Translator Speak API expects body with [{"Text": "..."}]
+        body = [{"Text": request.text}]
+        
+        # We use stream=True to pass the audio data directly to the client
+        response = requests.post(url, params=params, headers=headers, json=body, stream=True)
+        
+        if response.status_code != 200:
+            print(f"Error from Microsoft: {response.text}")
+            raise HTTPException(status_code=response.status_code, detail="Error from Microsoft API")
+            
+        return StreamingResponse(response.iter_content(chunk_size=1024), media_type="audio/mp3")
+        
+    except Exception as e:
+        print(f"Proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============= LESSON ENDPOINTS =============
 
 @api_router.get("/lessons")
@@ -1120,6 +1163,25 @@ async def lose_life(current_user: dict = Depends(get_current_user)):
         "lives": new_lives
     }
 
+@api_router.post("/user/gain-life")
+async def gain_life(current_user: dict = Depends(get_current_user)):
+    """Gain a heart from mini-game"""
+    current_lives = current_user.get("lives", 5)
+    if current_lives >= 5:
+        return {"success": False, "message": "Lives full", "lives": 5}
+    
+    new_lives = current_lives + 1
+    await db.users.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {"lives": new_lives}}
+    )
+    
+    return {
+        "success": True,
+        "lives": new_lives,
+        "message": "Heart gained!"
+    }
+
 # ============= TIPS ENDPOINT =============
 
 @api_router.get("/tips/{unit}")
@@ -1177,7 +1239,7 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["http://localhost:8081", "http://localhost:8001", "http://127.0.0.1:8081", "http://127.0.0.1:8001"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

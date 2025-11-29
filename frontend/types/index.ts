@@ -41,6 +41,7 @@ export interface DictionaryEntry {
   maya: string;
   spanish: string;
   category: string;
+  audio?: string;
 }
 
 export interface Tips {
