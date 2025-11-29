@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -18,26 +19,56 @@ import { Lesson, Exercise } from '../../types';
 export default function LessonScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { refreshUser } = useAuth();
-  
+  const lessonId = Array.isArray(id) ? id[0] : id;
+  const { user, refreshUser } = useAuth();
+
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string>('');
-  const [matchedPairs, setMatchedPairs] = useState<{[key: string]: string}>({});
+  const [matchedPairs, setMatchedPairs] = useState<{ [key: string]: string }>({});
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [score, setScore] = useState(0);
   const [wrongAnswers, setWrongAnswers] = useState(0);
   const [loading, setLoading] = useState(true);
   const [fadeAnim] = useState(new Animated.Value(1));
+  const [selectedSelection, setSelectedSelection] = useState<{ type: 'maya' | 'spanish', value: string } | null>(null);
 
   useEffect(() => {
-    loadLesson();
-  }, [id]);
+    if (lessonId) {
+      loadLesson();
+    }
+  }, [lessonId]);
+
+  const handleSelection = (type: 'maya' | 'spanish', value: string) => {
+    if (showFeedback) return;
+
+    // If nothing selected, select this
+    if (!selectedSelection) {
+      setSelectedSelection({ type, value });
+      return;
+    }
+
+    // If clicking same type, switch selection
+    if (selectedSelection.type === type) {
+      setSelectedSelection({ type, value });
+      return;
+    }
+
+    // If clicking opposite type, try to match
+    const maya = type === 'maya' ? value : selectedSelection.value;
+    const spanish = type === 'spanish' ? value : selectedSelection.value;
+
+    // Update matched pairs
+    const newMatched = { ...matchedPairs };
+    newMatched[maya] = spanish;
+    setMatchedPairs(newMatched);
+    setSelectedSelection(null);
+  };
 
   const loadLesson = async () => {
     try {
-      const response = await api.get(`/api/lessons/${id}`);
+      const response = await api.get(`/api/lessons/${lessonId}`);
       setLesson(response.data);
     } catch (error) {
       console.error('Error loading lesson:', error);
@@ -49,7 +80,7 @@ export default function LessonScreen() {
   };
 
   const currentExercise = lesson?.exercises[currentExerciseIndex];
-  const progress = lesson ? ((currentExerciseIndex + 1) / lesson.exercises.length) * 100 : 0;
+  const progress = lesson ? ((currentExerciseIndex) / lesson.exercises.length) * 100 : 0;
 
   const handleCheck = async () => {
     if (!currentExercise || !lesson) return;
@@ -60,7 +91,7 @@ export default function LessonScreen() {
       correct = selectedAnswer === currentExercise.correct_answer;
     } else if (currentExercise.type === 'matching') {
       const expectedPairs = currentExercise.pairs || [];
-      correct = expectedPairs.every(pair => 
+      correct = expectedPairs.every(pair =>
         matchedPairs[pair.maya] === pair.spanish
       );
     }
@@ -72,8 +103,13 @@ export default function LessonScreen() {
       setScore(score + 1);
     } else {
       setWrongAnswers(wrongAnswers + 1);
-      await api.post('/api/lessons/lose-life');
-      await refreshUser();
+      try {
+        await api.post('/api/lessons/lose-life');
+        await refreshUser();
+      } catch (error: any) {
+        // Just log the error, don't exit the lesson
+        console.log('Life lost:', error.response?.data);
+      }
     }
 
     Animated.sequence([
@@ -97,6 +133,7 @@ export default function LessonScreen() {
       setCurrentExerciseIndex(currentExerciseIndex + 1);
       setSelectedAnswer('');
       setMatchedPairs({});
+      setSelectedSelection(null);
       setShowFeedback(false);
       setIsCorrect(false);
     } else {
@@ -118,32 +155,23 @@ export default function LessonScreen() {
       });
 
       await refreshUser();
+      router.replace('/(tabs)');
 
-      Alert.alert(
-        '¡Lección Completada!',
-        `¡Bien hecho!\n\nPuntuación: ${Math.round(scorePercent)}%\nXP ganado: ${xpEarned}`,
-        [
-          {
-            text: 'Continuar',
-            onPress: () => router.back(),
-          },
-        ]
-      );
     } catch (error) {
       console.error('Error completing lesson:', error);
-      Alert.alert('Error', 'No se pudo guardar el progreso');
+      router.replace('/(tabs)');
     }
   };
 
   const handleMatchPair = (maya: string, spanish: string) => {
     const newMatched = { ...matchedPairs };
-    
+
     if (newMatched[maya] === spanish) {
       delete newMatched[maya];
     } else {
       newMatched[maya] = spanish;
     }
-    
+
     setMatchedPairs(newMatched);
   };
 
@@ -154,7 +182,7 @@ export default function LessonScreen() {
       return (
         <View style={styles.exerciseContainer}>
           <Text style={styles.question}>{currentExercise.question}</Text>
-          
+
           <View style={styles.optionsContainer}>
             {currentExercise.options?.map((option, index) => (
               <TouchableOpacity
@@ -185,39 +213,52 @@ export default function LessonScreen() {
 
     if (currentExercise.type === 'matching') {
       const pairs = currentExercise.pairs || [];
-      
+      const isComplete = Object.keys(matchedPairs).length === pairs.length;
+
       return (
         <View style={styles.exerciseContainer}>
           <Text style={styles.question}>{currentExercise.question}</Text>
-          
+
           <View style={styles.matchingContainer}>
             <View style={styles.matchingColumn}>
               <Text style={styles.columnTitle}>Maya</Text>
-              {pairs.map((pair, index) => (
-                <View key={index} style={styles.matchingCard}>
-                  <Text style={styles.matchingText}>{pair.maya}</Text>
-                </View>
-              ))}
+              {pairs.map((pair, index) => {
+                const isMatched = matchedPairs[pair.maya] !== undefined;
+                const isSelected = selectedSelection?.type === 'maya' && selectedSelection.value === pair.maya;
+
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.matchingCard,
+                      isSelected && styles.matchingCardSelected,
+                      isMatched && styles.matchingCardMatched,
+                    ]}
+                    onPress={() => !isMatched && handleSelection('maya', pair.maya)}
+                    disabled={showFeedback || isMatched}
+                  >
+                    <Text style={styles.matchingText}>{pair.maya}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <View style={styles.matchingColumn}>
               <Text style={styles.columnTitle}>Español</Text>
               {pairs.map((pair, index) => {
                 const isMatched = Object.values(matchedPairs).includes(pair.spanish);
+                const isSelected = selectedSelection?.type === 'spanish' && selectedSelection.value === pair.spanish;
+
                 return (
                   <TouchableOpacity
                     key={index}
                     style={[
                       styles.matchingCard,
+                      isSelected && styles.matchingCardSelected,
                       isMatched && styles.matchingCardMatched,
                     ]}
-                    onPress={() => {
-                      const mayaKey = pairs.find(p => !matchedPairs[p.maya])?.maya;
-                      if (mayaKey) {
-                        handleMatchPair(mayaKey, pair.spanish);
-                      }
-                    }}
-                    disabled={showFeedback}
+                    onPress={() => !isMatched && handleSelection('spanish', pair.spanish)}
+                    disabled={showFeedback || isMatched}
                   >
                     <Text style={styles.matchingText}>{pair.spanish}</Text>
                   </TouchableOpacity>
@@ -225,13 +266,8 @@ export default function LessonScreen() {
               })}
             </View>
           </View>
-          
+
           <View style={styles.matchedPairsContainer}>
-            {Object.entries(matchedPairs).map(([maya, spanish]) => (
-              <View key={maya} style={styles.matchedPair}>
-                <Text style={styles.matchedPairText}>{maya} → {spanish}</Text>
-              </View>
-            ))}
           </View>
         </View>
       );
@@ -243,7 +279,8 @@ export default function LessonScreen() {
   if (loading || !lesson) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>Cargando...</Text>
+        <ActivityIndicator size="large" color="#58CC02" />
+        <Text style={styles.loadingText}>Cargando lección...</Text>
       </View>
     );
   }
@@ -252,20 +289,24 @@ export default function LessonScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-          <Ionicons name="close" size={28} color="#777" />
+          <Ionicons name="close" size={28} color="#AFAFAF" />
         </TouchableOpacity>
-        
+
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${progress}%` }]} />
           </View>
         </View>
+
+        <View style={styles.heartsContainer}>
+          <Ionicons name="heart" size={24} color="#FF4B4B" />
+          <Text style={styles.heartsText}>{user?.lives || 0}</Text>
+        </View>
       </View>
 
-      <Animated.ScrollView 
-        style={styles.content}
+      <Animated.ScrollView
+        style={[styles.content, { opacity: fadeAnim }]}
         contentContainerStyle={styles.contentContainer}
-        opacity={fadeAnim}
       >
         {renderExercise()}
       </Animated.ScrollView>
@@ -273,24 +314,39 @@ export default function LessonScreen() {
       {showFeedback && (
         <View style={[styles.feedbackBar, isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect]}>
           <View style={styles.feedbackContent}>
-            <Ionicons 
-              name={isCorrect ? 'checkmark-circle' : 'close-circle'} 
-              size={32} 
-              color="#FFF" 
+            <Ionicons
+              name={isCorrect ? 'checkmark-circle' : 'close-circle'}
+              size={32}
+              color="#FFF"
             />
             <View style={styles.feedbackTextContainer}>
               <Text style={styles.feedbackTitle}>
                 {isCorrect ? '¡Correcto!' : 'Incorrecto'}
               </Text>
               {!isCorrect && currentExercise && (
-                <Text style={styles.feedbackSubtitle}>
-                  Respuesta correcta: {currentExercise.correct_answer}
-                </Text>
+                <View>
+                  {currentExercise.type === 'matching' ? (
+                    <View>
+                      <Text style={styles.feedbackSubtitle}>Pares correctos:</Text>
+                      {currentExercise.pairs?.map((p, i) => (
+                        <Text key={i} style={styles.feedbackSubtitle}>
+                          {p.maya} = {p.spanish}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.feedbackSubtitle}>
+                      Respuesta correcta: {currentExercise.correct_answer}
+                    </Text>
+                  )}
+                </View>
               )}
             </View>
           </View>
           <TouchableOpacity style={styles.continueButton} onPress={handleNext}>
-            <Text style={styles.continueButtonText}>Continuar</Text>
+            <Text style={[styles.continueButtonText, { color: isCorrect ? '#58CC02' : '#FF4B4B' }]}>
+              Continuar
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -308,20 +364,27 @@ export default function LessonScreen() {
             <Text style={styles.checkButtonText}>Verificar</Text>
           </TouchableOpacity>
         </View>
-      )}
-    </SafeAreaView>
+      )
+      }
+    </SafeAreaView >
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFF',
+    backgroundColor: '#000000',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000000',
+  },
+  loadingText: {
+    color: '#FFF',
+    marginTop: 12,
+    fontSize: 16,
   },
   header: {
     flexDirection: 'row',
@@ -329,6 +392,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
   },
   closeButton: {
     padding: 4,
@@ -338,7 +403,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 12,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: '#333',
     borderRadius: 6,
     overflow: 'hidden',
   },
@@ -346,6 +411,16 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#58CC02',
     borderRadius: 6,
+  },
+  heartsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heartsText: {
+    color: '#FF4B4B',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   content: {
     flex: 1,
@@ -359,7 +434,7 @@ const styles = StyleSheet.create({
   question: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFF',
     textAlign: 'center',
   },
   optionsContainer: {
@@ -369,28 +444,29 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#E5E5E5',
-    backgroundColor: '#FFF',
+    borderColor: '#333',
+    backgroundColor: '#1C1C1E',
   },
   optionSelected: {
     borderColor: '#1CB0F6',
-    backgroundColor: '#E7F5FF',
+    backgroundColor: '#1C1C1E',
   },
   optionCorrect: {
     borderColor: '#58CC02',
-    backgroundColor: '#D7FFB8',
+    backgroundColor: '#1C1C1E',
   },
   optionIncorrect: {
     borderColor: '#FF4B4B',
-    backgroundColor: '#FFE5E5',
+    backgroundColor: '#1C1C1E',
   },
   optionText: {
     fontSize: 18,
-    color: '#000',
+    color: '#FFF',
     textAlign: 'center',
   },
   optionTextSelected: {
     fontWeight: '600',
+    color: '#1CB0F6',
   },
   matchingContainer: {
     flexDirection: 'row',
@@ -411,16 +487,20 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#E5E5E5',
-    backgroundColor: '#FFF',
+    borderColor: '#333',
+    backgroundColor: '#1C1C1E',
+  },
+  matchingCardSelected: {
+    borderColor: '#1CB0F6',
+    backgroundColor: '#1C1C1E',
   },
   matchingCardMatched: {
     borderColor: '#58CC02',
-    backgroundColor: '#D7FFB8',
+    backgroundColor: '#1C1C1E',
   },
   matchingText: {
     fontSize: 16,
-    color: '#000',
+    color: '#FFF',
     textAlign: 'center',
   },
   matchedPairsContainer: {
@@ -429,7 +509,7 @@ const styles = StyleSheet.create({
   matchedPair: {
     padding: 12,
     borderRadius: 8,
-    backgroundColor: '#E7F5FF',
+    backgroundColor: '#333',
   },
   matchedPairText: {
     fontSize: 14,
@@ -440,7 +520,8 @@ const styles = StyleSheet.create({
   bottomBar: {
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
+    borderTopColor: '#333',
+    backgroundColor: '#000000',
   },
   checkButton: {
     backgroundColor: '#58CC02',
@@ -449,7 +530,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkButtonDisabled: {
-    backgroundColor: '#E5E5E5',
+    backgroundColor: '#333',
+    opacity: 0.5,
   },
   checkButtonText: {
     color: '#FFF',
@@ -461,12 +543,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   feedbackCorrect: {
-    backgroundColor: '#58CC02',
+    backgroundColor: '#1C1C1E',
+    borderTopWidth: 2,
+    borderColor: '#58CC02',
   },
   feedbackIncorrect: {
-    backgroundColor: '#FF4B4B',
+    backgroundColor: '#1C1C1E',
+    borderTopWidth: 2,
+    borderColor: '#FF4B4B',
   },
   feedbackContent: {
     flexDirection: 'row',
@@ -496,6 +584,5 @@ const styles = StyleSheet.create({
   continueButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#58CC02',
   },
 });

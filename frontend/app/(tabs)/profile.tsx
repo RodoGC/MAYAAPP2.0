@@ -5,11 +5,16 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Alert,
+  Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../utils/api';
 
@@ -28,9 +33,11 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
   useEffect(() => {
     loadStats();
+    loadProfileImage();
   }, []);
 
   const loadStats = async () => {
@@ -42,22 +49,63 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Cerrar Sesión',
-      '¿Estás seguro que quieres salir?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Salir',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            router.replace('/');
+  const loadProfileImage = async () => {
+    try {
+      const savedImage = await AsyncStorage.getItem('profile_image');
+      if (savedImage) {
+        setProfileImage(savedImage);
+      }
+    } catch (error) {
+      console.error('Error loading profile image:', error);
+    }
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (status !== 'granted') {
+      Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería para cambiar la foto.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setProfileImage(uri);
+      await AsyncStorage.setItem('profile_image', uri);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('¿Estás seguro que quieres salir?')) {
+        await logout();
+        // Force reload to ensure clean state
+        window.location.href = '/';
+      }
+    } else {
+      Alert.alert(
+        'Cerrar Sesión',
+        '¿Estás seguro que quieres salir?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Salir',
+            style: 'destructive',
+            onPress: async () => {
+              await logout();
+              router.replace('/');
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   return (
@@ -68,9 +116,19 @@ export default function ProfileScreen() {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.userCard}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={48} color="#FFF" />
-          </View>
+          <TouchableOpacity style={styles.avatarContainer} onPress={pickImage}>
+            {profileImage ? (
+              <Image source={{ uri: profileImage }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={48} color="#FFF" />
+              </View>
+            )}
+            <View style={styles.editIcon}>
+              <Ionicons name="camera" size={16} color="#FFF" />
+            </View>
+          </TouchableOpacity>
+
           <Text style={styles.username}>{user?.username}</Text>
           <Text style={styles.email}>{user?.email}</Text>
           <View style={styles.levelBadge}>
@@ -113,22 +171,22 @@ export default function ProfileScreen() {
             <Text style={styles.progressPercentage}>{stats?.progress_percentage || 0}%</Text>
           </View>
           <View style={styles.progressBarContainer}>
-            <View 
+            <View
               style={[
-                styles.progressBar, 
+                styles.progressBar,
                 { width: `${stats?.progress_percentage || 0}%` }
-              ]} 
+              ]}
             />
           </View>
         </View>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={24} color="#FF4B4B" />
           <Text style={styles.logoutText}>Cerrar Sesión</Text>
-        </TouchableOpacity>
+        </Pressable>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Maay v1.0</Text>
+          <Text style={styles.footerText}>MayaApp v1.0</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -138,19 +196,19 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: '#000000',
   },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFF',
+    backgroundColor: '#000000',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: '#333',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1CB0F6',
+    color: '#FFF',
   },
   scrollView: {
     flex: 1,
@@ -159,42 +217,60 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   userCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#1C1C1E',
     padding: 24,
     borderRadius: 16,
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#333',
   },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#1CB0F6',
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#58CC02',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  editIcon: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#1CB0F6',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1C1C1E',
   },
   username: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFF',
     marginBottom: 4,
   },
   email: {
     fontSize: 14,
-    color: '#777',
+    color: '#AFAFAF',
     marginBottom: 12,
   },
   levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FFF9E5',
+    backgroundColor: '#333',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -213,37 +289,31 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: '47%',
-    backgroundColor: '#FFF',
+    backgroundColor: '#1C1C1E',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   statValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFF',
     marginTop: 8,
   },
   statLabel: {
     fontSize: 12,
-    color: '#777',
+    color: '#AFAFAF',
     marginTop: 4,
   },
   progressCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#1C1C1E',
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   progressHeader: {
     flexDirection: 'row',
@@ -254,7 +324,7 @@ const styles = StyleSheet.create({
   progressTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: '#FFF',
   },
   progressPercentage: {
     fontSize: 18,
@@ -263,7 +333,7 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     height: 12,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: '#333',
     borderRadius: 6,
     overflow: 'hidden',
   },
@@ -277,10 +347,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FFF',
+    backgroundColor: '#1C1C1E',
     padding: 16,
     borderRadius: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#FF4B4B',
     marginBottom: 24,
   },
@@ -295,6 +365,6 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: '#777',
+    color: '#555',
   },
 });

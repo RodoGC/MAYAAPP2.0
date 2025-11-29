@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../utils/api';
 import { Unit } from '../../types';
+import HeartsGame from '../../components/HeartsGame';
+import TipsModal from '../../components/TipsModal';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -22,6 +24,9 @@ export default function HomeScreen() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showGame, setShowGame] = useState(false);
+  const [tipsVisible, setTipsVisible] = useState(false);
+  const [currentTips, setCurrentTips] = useState<any>(null);
 
   useEffect(() => {
     loadLessons();
@@ -51,7 +56,7 @@ export default function HomeScreen() {
       return;
     }
     if (user && user.lives === 0) {
-      Alert.alert('Sin vidas', 'Revisa una lección completada para recuperar vidas');
+      Alert.alert('Sin vidas', 'Juega al mini-juego (toca el corazón) para recuperar vidas');
       return;
     }
     router.push(`/lesson/${lessonId}`);
@@ -60,13 +65,11 @@ export default function HomeScreen() {
   const handleTipsPress = async (unitNumber: number) => {
     try {
       const response = await api.get(`/api/tips/${unitNumber}`);
-      Alert.alert(
-        response.data.title,
-        `Gramática:\n${response.data.grammar.join('\n\n')}\n\nVocabulario:\n${response.data.vocabulary.join('\n')}`,
-        [{ text: 'Cerrar' }]
-      );
+      setCurrentTips(response.data);
+      setTipsVisible(true);
     } catch (error) {
       console.error('Error loading tips:', error);
+      Alert.alert('Error', 'No se pudieron cargar los consejos');
     }
   };
 
@@ -82,17 +85,17 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Maay</Text>
+          <Text style={styles.headerTitle}>MayaApp</Text>
         </View>
         <View style={styles.headerRight}>
           <View style={styles.stat}>
             <Ionicons name="flame" size={24} color="#FF9600" />
             <Text style={styles.statText}>{user?.streak || 0}</Text>
           </View>
-          <View style={styles.stat}>
+          <TouchableOpacity style={styles.stat} onPress={() => setShowGame(true)}>
             <Ionicons name="heart" size={24} color="#FF4B4B" />
             <Text style={styles.statText}>{user?.lives || 0}</Text>
-          </View>
+          </TouchableOpacity>
           <View style={styles.stat}>
             <Ionicons name="star" size={24} color="#FFC800" />
             <Text style={styles.statText}>{user?.xp || 0}</Text>
@@ -104,7 +107,7 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#58CC02" />
         }
       >
         <Text style={styles.welcomeText}>¡Hola, {user?.username}!</Text>
@@ -155,6 +158,21 @@ export default function HomeScreen() {
           </View>
         ))}
       </ScrollView>
+
+      <HeartsGame
+        visible={showGame}
+        onClose={() => setShowGame(false)}
+        onSuccess={() => {
+          refreshUser();
+          setShowGame(false);
+        }}
+      />
+
+      <TipsModal
+        visible={tipsVisible}
+        onClose={() => setTipsVisible(false)}
+        tips={currentTips}
+      />
     </SafeAreaView>
   );
 }
@@ -162,12 +180,13 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: '#000000',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
@@ -175,9 +194,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFF',
+    backgroundColor: '#000000',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: '#333',
   },
   headerLeft: {
     flex: 1,
@@ -185,7 +204,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1CB0F6',
+    color: '#58CC02',
   },
   headerRight: {
     flexDirection: 'row',
@@ -199,7 +218,7 @@ const styles = StyleSheet.create({
   statText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFF',
   },
   scrollView: {
     flex: 1,
@@ -210,12 +229,12 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFF',
     marginBottom: 4,
   },
   levelText: {
     fontSize: 16,
-    color: '#777',
+    color: '#AFAFAF',
     marginBottom: 24,
   },
   unitContainer: {
@@ -230,20 +249,22 @@ const styles = StyleSheet.create({
   unitTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFF',
   },
   unitSubtitle: {
     fontSize: 16,
-    color: '#777',
+    color: '#AFAFAF',
   },
   tipsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#E7F5FF',
+    backgroundColor: '#1C1C1E',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   tipsButtonText: {
     fontSize: 14,
@@ -256,26 +277,24 @@ const styles = StyleSheet.create({
   lessonNode: {
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#FFF',
+    backgroundColor: '#1C1C1E',
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   lessonCompleted: {
-    backgroundColor: '#E8F5E9',
+    borderColor: '#58CC02',
+    backgroundColor: '#0A2A0A',
   },
   lessonLocked: {
-    backgroundColor: '#F5F5F5',
-    opacity: 0.6,
+    opacity: 0.5,
+    backgroundColor: '#111',
   },
   lessonCircle: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: '#333',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -283,12 +302,12 @@ const styles = StyleSheet.create({
   lessonTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: '#FFF',
     textAlign: 'center',
   },
   lessonXP: {
     fontSize: 12,
-    color: '#777',
+    color: '#AFAFAF',
     marginTop: 4,
   },
 });

@@ -115,7 +115,7 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1CB0F6',
+    backgroundColor: '#000000',
   },
   scrollContent: {
     flexGrow: 1,
@@ -156,11 +156,13 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   input: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#1C1C1E',
     padding: 16,
     borderRadius: 12,
     fontSize: 16,
-    color: '#000',
+    color: '#FFF',
+    borderWidth: 1,
+    borderColor: '#333',
   },
   button: {
     backgroundColor: '#58CC02',
@@ -190,5 +192,6 @@ const styles = StyleSheet.create({
   },
   linkBold: {
     fontWeight: 'bold',
+    color: '#58CC02',
   },
 });
