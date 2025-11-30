@@ -8,10 +8,13 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Pressable,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import brandLogo from '../../assets/images/icon.png';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../utils/api';
 import { Unit } from '../../types';
@@ -27,9 +30,14 @@ export default function HomeScreen() {
   const [showGame, setShowGame] = useState(false);
   const [tipsVisible, setTipsVisible] = useState(false);
   const [currentTips, setCurrentTips] = useState<any>(null);
+  const [showHeartTooltip, setShowHeartTooltip] = useState(false);
+  const [showFlameTooltip, setShowFlameTooltip] = useState(false);
+  const [showStarTooltip, setShowStarTooltip] = useState(false);
+  const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
     loadLessons();
+    loadStats();
   }, []);
 
   const loadLessons = async () => {
@@ -46,7 +54,7 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadLessons(), refreshUser()]);
+    await Promise.all([loadLessons(), loadStats(), refreshUser()]);
     setRefreshing(false);
   };
 
@@ -73,6 +81,15 @@ export default function HomeScreen() {
     }
   };
 
+  const loadStats = async () => {
+    try {
+      const response = await api.get('/api/user/stats');
+      setStats(response.data);
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -81,25 +98,72 @@ export default function HomeScreen() {
     );
   }
 
+  const xp = user?.xp || 0;
+  const level = user?.level ?? Math.floor(xp / 100);
+  const nextLevelXp = (level + 1) * 100;
+  const starsRemaining = Math.max(0, nextLevelXp - xp);
+  const progressPct = stats?.progress_percentage || 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>MayaApp</Text>
+          <View style={styles.brandRow}>
+            <Image source={brandLogo as any} style={styles.brandLogo} />
+            <Text style={styles.headerTitle}>MayaApp</Text>
+          </View>
         </View>
         <View style={styles.headerRight}>
-          <View style={styles.stat}>
+          <Pressable
+            style={styles.stat}
+            onHoverIn={() => setShowFlameTooltip(true)}
+            onHoverOut={() => setShowFlameTooltip(false)}
+          >
             <Ionicons name="flame" size={24} color="#FF9600" />
             <Text style={styles.statText}>{user?.streak || 0}</Text>
-          </View>
-          <TouchableOpacity style={styles.stat} onPress={() => setShowGame(true)}>
+            {showFlameTooltip && (
+              <View style={styles.tooltip}>
+                <Text style={styles.tooltipText}>Tu racha sube completando lecciones cada día.</Text>
+              </View>
+            )}
+          </Pressable>
+          <Pressable
+            style={styles.stat}
+            onPress={() => setShowGame(true)}
+            onHoverIn={() => setShowHeartTooltip(true)}
+            onHoverOut={() => setShowHeartTooltip(false)}
+          >
             <Ionicons name="heart" size={24} color="#FF4B4B" />
             <Text style={styles.statText}>{user?.lives || 0}</Text>
-          </TouchableOpacity>
-          <View style={styles.stat}>
+            {showHeartTooltip && (
+              <View style={styles.tooltip}>
+                <Text style={styles.tooltipText}>Presiona el corazón para jugar el minijuego y recuperar corazones.</Text>
+              </View>
+            )}
+          </Pressable>
+          <Pressable
+            style={styles.stat}
+            onHoverIn={() => setShowStarTooltip(true)}
+            onHoverOut={() => setShowStarTooltip(false)}
+          >
             <Ionicons name="star" size={24} color="#FFC800" />
-            <Text style={styles.statText}>{user?.xp || 0}</Text>
-          </View>
+            <Text style={styles.statText}>{xp}</Text>
+            {showStarTooltip && (
+              <View style={styles.tooltip}>
+                <Text style={styles.tooltipText}>Te faltan {starsRemaining} estrellas para subir de nivel.</Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.progressSection}>
+        <View style={styles.progressHeader}>
+          <Text style={styles.progressTitle}>Progreso</Text>
+          <Text style={styles.progressPercentage}>{progressPct}%</Text>
+        </View>
+        <View style={styles.progressBarContainer}>
+          <View style={[styles.progressBar, { width: `${progressPct}%` }]} />
         </View>
       </View>
 
@@ -197,9 +261,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    position: 'relative',
+    zIndex: 2,
   },
   headerLeft: {
     flex: 1,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  brandLogo: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
   },
   headerTitle: {
     fontSize: 24,
@@ -214,11 +290,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    position: 'relative',
   },
   statText: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFF',
+  },
+  tooltip: {
+    position: 'absolute',
+    top: 28,
+    left: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    zIndex: 10,
+  },
+  tooltipText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
@@ -273,6 +367,42 @@ const styles = StyleSheet.create({
   },
   lessonsPath: {
     gap: 16,
+  },
+  progressSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+    position: 'relative',
+    zIndex: 1,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  progressTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  progressPercentage: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#58CC02',
+  },
+  progressBarContainer: {
+    height: 10,
+    backgroundColor: '#333',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#58CC02',
+    borderRadius: 6,
   },
   lessonNode: {
     alignItems: 'center',

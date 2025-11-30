@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,12 +16,11 @@ import api from '../../utils/api';
 import { DictionaryEntry } from '../../types';
 import axios from 'axios';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import { Buffer } from 'buffer';
+import { useFocusEffect } from '@react-navigation/native';
 
-// API Key constant (to be filled by user)
-const MS_TRANSLATOR_KEY = '';
-const MS_TRANSLATOR_REGION = 'centralus';
-const MS_TRANSLATOR_ENDPOINT = 'https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=yua&from=es';
+const MS_TRANSLATOR_ENDPOINT = '/api/translate';
 
 export default function DictionaryScreen() {
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
@@ -31,18 +31,47 @@ export default function DictionaryScreen() {
   const [translationInput, setTranslationInput] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
+  const [speechRate, setSpeechRate] = useState(0.95);
+  const [webVoices, setWebVoices] = useState<any[]>([]);
+  const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
+  const [webPaused, setWebPaused] = useState(false);
 
   useEffect(() => {
     loadDictionary();
   }, []);
 
   useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const update = () => {
+        const v = window.speechSynthesis.getVoices().filter(x => /es/i.test(x.lang));
+        setWebVoices(v);
+        if (!selectedVoice && v.length) setSelectedVoice(v[0].name);
+      };
+      update();
+      (window.speechSynthesis as any).onvoiceschanged = update;
+    }
+  }, [selectedVoice]);
+
+  useFocusEffect(React.useCallback(() => {
+    return () => {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.speechSynthesis.cancel();
+        setWebPaused(false);
+      } else {
+        Speech.stop();
+      }
+    };
+  }, []));
+
+  useEffect(() => {
     if (searchText) {
-      const filtered = entries.filter(
-        (entry) =>
-          entry.maya.toLowerCase().includes(searchText.toLowerCase()) ||
-          entry.spanish.toLowerCase().includes(searchText.toLowerCase())
-      );
+      const filtered = entries
+        .filter(
+          (entry) =>
+            entry.maya.toLowerCase().includes(searchText.toLowerCase()) ||
+            entry.spanish.toLowerCase().includes(searchText.toLowerCase())
+        )
+        .sort((a, b) => a.maya.localeCompare(b.maya));
       setFilteredEntries(filtered);
     } else {
       setFilteredEntries(entries);
@@ -52,8 +81,9 @@ export default function DictionaryScreen() {
   const loadDictionary = async () => {
     try {
       const response = await api.get('/api/dictionary');
-      setEntries(response.data);
-      setFilteredEntries(response.data);
+      const sorted = [...response.data].sort((a: DictionaryEntry, b: DictionaryEntry) => a.maya.localeCompare(b.maya));
+      setEntries(sorted);
+      setFilteredEntries(sorted);
     } catch (error) {
       console.error('Error loading dictionary:', error);
     }
@@ -62,27 +92,13 @@ export default function DictionaryScreen() {
   const handleTranslate = async () => {
     if (!translationInput.trim()) return;
 
-    if (!MS_TRANSLATOR_KEY) {
-      Alert.alert('Error', 'Falta la API Key de Microsoft Translator');
-      return;
-    }
-
     setIsTranslating(true);
     try {
-      const response = await axios.post(
-        MS_TRANSLATOR_ENDPOINT,
-        [{ Text: translationInput }],
-        {
-          headers: {
-            'Ocp-Apim-Subscription-Key': MS_TRANSLATOR_KEY,
-            'Ocp-Apim-Subscription-Region': MS_TRANSLATOR_REGION,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.data && response.data[0] && response.data[0].translations) {
-        setTranslatedText(response.data[0].translations[0].text);
+      const response = await api.post(MS_TRANSLATOR_ENDPOINT, { text: translationInput, from_lang: 'es', to_lang: 'yua' });
+      if (response.data && response.data.text) {
+        setTranslatedText(response.data.text);
+      } else {
+        Alert.alert('Error', 'No se pudo obtener la traducción');
       }
     } catch (error) {
       console.error('Translation error:', error);
@@ -94,33 +110,92 @@ export default function DictionaryScreen() {
 
   const playAudio = async (text: string) => {
     if (!text) return;
-
-    if (!MS_TRANSLATOR_KEY) {
-      Alert.alert('Error', 'Falta la API Key de Microsoft Translator');
-      return;
+    if (Platform.OS !== 'web') {
+      try {
+        Speech.speak(text, { rate: 0.95 });
+        return;
+      } catch {}
     }
 
     try {
-      // Call our backend proxy instead of Microsoft directly
-      // This avoids CORS issues on web/localhost
-      const response = await api.post('/api/speak', {
-        text: text,
-        api_key: MS_TRANSLATOR_KEY,
-        region: MS_TRANSLATOR_REGION
-      }, {
-        responseType: 'arraybuffer' // We expect binary audio data
-      });
+      const response = await api.post(
+        '/api/speak',
+        { text },
+        { responseType: 'arraybuffer' }
+      );
 
-      // Convert binary to base64 for Expo AV
+      if (Platform.OS === 'web') {
+        const blob = new Blob([response.data], { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        const audio = new window.Audio(url);
+        audio.onended = () => URL.revokeObjectURL(url);
+        await audio.play();
+        return;
+      }
+
       const audioData = Buffer.from(response.data, 'binary').toString('base64');
       const uri = `data:audio/mp3;base64,${audioData}`;
-
       const { sound } = await Audio.Sound.createAsync({ uri });
       await sound.playAsync();
+      sound.setOnPlaybackStatusUpdate(async (status: any) => {
+        if (status.didJustFinish) {
+          await sound.unloadAsync();
+        }
+      });
 
     } catch (error) {
       console.error('Error playing audio:', error);
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          const utter = new SpeechSynthesisUtterance(text);
+          const voices = window.speechSynthesis.getVoices();
+          const preferred = selectedVoice
+            ? voices.find(v => v.name === selectedVoice)
+            : voices.find(v => /es|es-MX|es-ES/i.test(v.lang));
+          if (preferred) utter.voice = preferred;
+          utter.rate = speechRate;
+          window.speechSynthesis.speak(utter);
+          return;
+        } catch (e) {
+          console.error('WebSpeech fallback failed:', e);
+        }
+      }
       Alert.alert('Error', 'No se pudo reproducir el audio.');
+    }
+  };
+
+  const stopSpeaking = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.speechSynthesis.cancel();
+      setWebPaused(false);
+    } else {
+      Speech.stop();
+    }
+  };
+
+  const pauseSpeaking = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.speechSynthesis.pause();
+      setWebPaused(true);
+    } else {
+      Speech.stop();
+    }
+  };
+
+  const resumeSpeaking = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.speechSynthesis.resume();
+      setWebPaused(false);
+    }
+  };
+
+  const decRate = () => setSpeechRate(r => Math.max(0.5, Math.round((r - 0.05) * 100) / 100));
+  const incRate = () => setSpeechRate(r => Math.min(1.5, Math.round((r + 0.05) * 100) / 100));
+  const nextVoice = () => {
+    if (Platform.OS === 'web' && webVoices.length) {
+      const idx = webVoices.findIndex(v => v.name === selectedVoice);
+      const next = webVoices[(idx + 1) % webVoices.length];
+      setSelectedVoice(next.name);
     }
   };
 
@@ -175,7 +250,43 @@ export default function DictionaryScreen() {
         </View>
         {translatedText ? (
           <View style={styles.resultBox}>
-            <Text style={styles.resultLabel}>Resultado:</Text>
+            <View style={styles.resultHeader}>
+              <Text style={styles.resultLabel}>Resultado:</Text>
+              <TouchableOpacity
+                style={styles.resultAction}
+                onPress={() => playAudio(translatedText)}
+              >
+                <Ionicons name="volume-high" size={22} color="#1CB0F6" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.controlsRow}>
+              <TouchableOpacity style={styles.controlButton} onPress={stopSpeaking}>
+                <Ionicons name="stop" size={18} color="#FFF" />
+              </TouchableOpacity>
+              {Platform.OS === 'web' ? (
+                webPaused ? (
+                  <TouchableOpacity style={styles.controlButton} onPress={resumeSpeaking}>
+                    <Ionicons name="play" size={18} color="#FFF" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.controlButton} onPress={pauseSpeaking}>
+                    <Ionicons name="pause" size={18} color="#FFF" />
+                  </TouchableOpacity>
+                )
+              ) : null}
+              <TouchableOpacity style={styles.controlButton} onPress={decRate}>
+                <Text style={styles.controlText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.rateText}>{speechRate.toFixed(2)}x</Text>
+              <TouchableOpacity style={styles.controlButton} onPress={incRate}>
+                <Text style={styles.controlText}>+</Text>
+              </TouchableOpacity>
+              {Platform.OS === 'web' && webVoices.length ? (
+                <TouchableOpacity style={styles.voiceButton} onPress={nextVoice}>
+                  <Text style={styles.voiceText}>{selectedVoice || 'voz'}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <Text style={styles.resultText}>{translatedText}</Text>
           </View>
         ) : null}
@@ -274,15 +385,57 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
+  resultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   resultLabel: {
     fontSize: 12,
     color: '#AFAFAF',
     marginBottom: 4,
   },
+  resultAction: {
+    padding: 4,
+  },
   resultText: {
     fontSize: 18,
     color: '#58CC02',
     fontWeight: 'bold',
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  controlButton: {
+    backgroundColor: '#2C2C2E',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  controlText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  rateText: {
+    color: '#AFAFAF',
+    fontSize: 12,
+  },
+  voiceButton: {
+    backgroundColor: '#1CB0F6',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  voiceText: {
+    color: '#000',
+    fontWeight: '600',
+    fontSize: 12,
   },
   searchContainer: {
     flexDirection: 'row',

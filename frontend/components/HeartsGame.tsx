@@ -30,15 +30,11 @@ export default function HeartsGame({ visible, onClose, onSuccess }: HeartsGamePr
     const { refreshUser } = useAuth();
     const [loading, setLoading] = useState(false);
     const [currentQuestion, setCurrentQuestion] = useState(0);
-    const [score, setScore] = useState(0);
-    const [gameOver, setGameOver] = useState(false);
 
     // Pick random question on open
     React.useEffect(() => {
         if (visible) {
             setCurrentQuestion(Math.floor(Math.random() * QUESTIONS.length));
-            setScore(0);
-            setGameOver(false);
         }
     }, [visible]);
 

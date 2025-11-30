@@ -876,6 +876,27 @@ DICTIONARY = [
     {"maya": "Ilik", "spanish": "Ver", "category": "Verbos"},
     {"maya": "Yaakun", "spanish": "Amar", "category": "Verbos"},
     {"maya": "Xíimbal", "spanish": "Caminar", "category": "Verbos"}
+    ,{"maya": "Balam", "spanish": "Jaguar", "category": "Animales"}
+    ,{"maya": "P'éek", "spanish": "Perro", "category": "Animales"}
+    ,{"maya": "Míis", "spanish": "Gato", "category": "Animales"}
+    ,{"maya": "Ch'íich", "spanish": "Pájaro", "category": "Animales"}
+    ,{"maya": "Kaay", "spanish": "Pez", "category": "Animales"}
+    ,{"maya": "Ha'", "spanish": "Agua", "category": "Naturaleza"}
+    ,{"maya": "K'áak'", "spanish": "Fuego", "category": "Naturaleza"}
+    ,{"maya": "Ik'", "spanish": "Aire", "category": "Naturaleza"}
+    ,{"maya": "Lu'um", "spanish": "Tierra", "category": "Naturaleza"}
+    ,{"maya": "K'iin", "spanish": "Sol", "category": "Naturaleza"}
+    ,{"maya": "Uh", "spanish": "Luna", "category": "Naturaleza"}
+    ,{"maya": "Ek'", "spanish": "Estrella", "category": "Naturaleza"}
+    ,{"maya": "Che'", "spanish": "Árbol", "category": "Naturaleza"}
+    ,{"maya": "Nikté'", "spanish": "Flor", "category": "Naturaleza"}
+    ,{"maya": "Ixim", "spanish": "Maíz", "category": "Comida"}
+    ,{"maya": "Waaj", "spanish": "Tortilla", "category": "Comida"}
+    ,{"maya": "Naj", "spanish": "Casa", "category": "Objetos"}
+    ,{"maya": "U k'áat", "spanish": "Por favor", "category": "Saludos"}
+    ,{"maya": "Ma' k'áatchi'", "spanish": "De nada", "category": "Saludos"}
+    ,{"maya": "Noj", "spanish": "Grande", "category": "Adjetivos"}
+    ,{"maya": "Chan", "spanish": "Pequeño", "category": "Adjetivos"}
 ]
 
 # ============= HELPER FUNCTIONS =============
@@ -987,8 +1008,6 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 class SpeakRequest(BaseModel):
     text: str
-    api_key: str
-    region: str = "centralus"
 
 @api_router.post("/speak")
 async def speak_proxy(request: SpeakRequest):
@@ -999,9 +1018,13 @@ async def speak_proxy(request: SpeakRequest):
         "format": "audio/mp3",
         "options": "Male"
     }
+    az_key = os.getenv("AZURE_TRANSLATOR_KEY", "")
+    az_region = os.getenv("AZURE_TRANSLATOR_REGION", "centralus")
+    if not az_key:
+        raise HTTPException(status_code=500, detail="Missing AZURE_TRANSLATOR_KEY in environment")
     headers = {
-        "Ocp-Apim-Subscription-Key": request.api_key,
-        "Ocp-Apim-Subscription-Region": request.region,
+        "Ocp-Apim-Subscription-Key": az_key,
+        "Ocp-Apim-Subscription-Region": az_region,
         "Content-Type": "application/json"
     }
     
@@ -1020,6 +1043,41 @@ async def speak_proxy(request: SpeakRequest):
         
     except Exception as e:
         print(f"Proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class TranslateRequest(BaseModel):
+    text: str
+    from_lang: str = "es"
+    to_lang: str = "yua"
+
+@api_router.post("/translate")
+async def translate_proxy(request: TranslateRequest):
+    url = "https://api.cognitive.microsofttranslator.com/translate"
+    params = {
+        "api-version": "3.0",
+        "to": request.to_lang,
+        "from": request.from_lang,
+    }
+    az_key = os.getenv("AZURE_TRANSLATOR_KEY", "")
+    az_region = os.getenv("AZURE_TRANSLATOR_REGION", "centralus")
+    if not az_key:
+        raise HTTPException(status_code=500, detail="Missing AZURE_TRANSLATOR_KEY in environment")
+    headers = {
+        "Ocp-Apim-Subscription-Key": az_key,
+        "Ocp-Apim-Subscription-Region": az_region,
+        "Content-Type": "application/json"
+    }
+    try:
+        body = [{"Text": request.text}]
+        response = requests.post(url, params=params, headers=headers, json=body)
+        if response.status_code != 200:
+            print(f"Error from Microsoft: {response.text}")
+            raise HTTPException(status_code=response.status_code, detail="Error from Microsoft API")
+        data = response.json()
+        translated = data[0]["translations"][0]["text"] if data and data[0].get("translations") else ""
+        return {"text": translated}
+    except Exception as e:
+        print(f"Translate proxy error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1203,8 +1261,8 @@ async def get_dictionary(search: Optional[str] = None, current_user: dict = Depe
             entry for entry in DICTIONARY
             if search_lower in entry["maya"].lower() or search_lower in entry["spanish"].lower()
         ]
-        return filtered
-    return DICTIONARY
+        return sorted(filtered, key=lambda e: e["maya"].lower())
+    return sorted(DICTIONARY, key=lambda e: e["maya"].lower())
 
 # ============= STATS ENDPOINT =============
 

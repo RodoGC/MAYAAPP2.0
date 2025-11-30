@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import React, { useEffect, useState } from 'react';
  
@@ -12,21 +12,17 @@ export default function Index() {
   const [bgDataUrl, setBgDataUrl] = useState<string | null>(null);
   const localBg: any = (() => {
     try {
-      return require('../assets/images/landing-bg.png');
+      return require('../assets/images/fondo.png');
     } catch {
       try {
-        return require('../assets/landing-bg.jpg');
+        return require('../assets/images/app-image.png');
       } catch {
         return null;
       }
     }
   })();
 
-  useEffect(() => {
-    if (!loading && user) {
-      router.replace('/(tabs)');
-    }
-  }, [user, loading, router]);
+  // Navegación inmediata cuando el usuario ya está autenticado
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -43,6 +39,10 @@ export default function Index() {
         <Text style={styles.loadingText}>Cargando...</Text>
       </View>
     );
+  }
+
+  if (!loading && user) {
+    return <Redirect href="/(tabs)" />;
   }
 
   const bgSource: any =
@@ -66,21 +66,21 @@ export default function Index() {
             <Text style={styles.titleCard}>MayaApp</Text>
             <Text style={styles.subtitleCard}>Aprende el idioma Maya de forma divertida y efectiva</Text>
           </View>
-        </View>
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => router.push('/signup')}
-          >
-            <Text style={styles.primaryButtonText}>Comenzar</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => router.push('/signup')}
+            >
+              <Text style={styles.primaryButtonText}>Comenzar</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.secondaryButtonText}>Ya tengo cuenta</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push('/login')}
+            >
+              <Text style={styles.secondaryButtonText}>Ya tengo cuenta</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </LinearGradient>
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   titleCard: {
     fontSize: 64,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#58CC02',
     marginBottom: 8,
   },
   subtitleCard: {
@@ -203,11 +203,12 @@ const styles = StyleSheet.create({
   },
  
   buttonContainer: {
-    gap: 16,
-    alignSelf: 'center',
-    width: '90%',
-    maxWidth: 768,
-    marginTop: 16,
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 96,
+    zIndex: 3,
+    gap: 12,
   },
   primaryButton: {
     backgroundColor: '#58CC02',
