@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function TabsLayout() {
   return (
@@ -36,7 +36,7 @@ export default function TabsLayout() {
         options={{
           title: 'Diccionario',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="book" size={size} color={color} />
+            <MaterialCommunityIcons name="feather" size={size} color={color} />
           ),
         }}
       />

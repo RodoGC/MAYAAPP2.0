@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'http://localhost:8001';
+export const API_URL = 'http://localhost:8001';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -23,3 +23,4 @@ api.interceptors.request.use(async (config) => {
 });
 
 export default api;
+export const absoluteUrl = (path: string) => (path.startsWith('http') ? path : `${API_URL}${path}`);

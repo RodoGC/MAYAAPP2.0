@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 
 interface TipsModalProps {
     visible: boolean;
@@ -15,19 +16,40 @@ interface TipsModalProps {
 
 export default function TipsModal({ visible, onClose, tips }: TipsModalProps) {
     if (!tips) return null;
+    const lang = process.env.EXPO_PUBLIC_TIPS_SPEECH_LANG || 'es-MX';
+    const speakAll = () => {
+        const parts: string[] = [];
+        parts.push(`Consejos: ${tips!.title}`);
+        if (tips!.grammar && tips!.grammar.length) parts.push('Gramática: ' + tips!.grammar.join('. '));
+        if (tips!.pronunciation && tips!.pronunciation.length) parts.push('Pronunciación: ' + tips!.pronunciation.join('. '));
+        if (tips!.vocabulary && tips!.vocabulary.length) parts.push('Vocabulario: ' + tips!.vocabulary.join(', '));
+        Speech.speak(parts.join('. '), { language: lang });
+    };
+
+    const handleClose = () => {
+        try {
+            Speech.stop();
+        } catch {}
+        onClose();
+    };
 
     return (
         <Modal
             animationType="slide"
             transparent={true}
             visible={visible}
-            onRequestClose={onClose}
+            onRequestClose={handleClose}
         >
             <View style={styles.centeredView}>
                 <View style={styles.modalView}>
                     <View style={styles.header}>
-                        <Text style={styles.modalTitle}>{tips.title}</Text>
-                        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                        <View style={styles.headerLeftRow}>
+                            <TouchableOpacity onPress={speakAll} style={styles.speakAllButton}>
+                                <Ionicons name="volume-high" size={22} color="#1CB0F6" />
+                            </TouchableOpacity>
+                            <Text style={styles.modalTitle}>{tips.title}</Text>
+                        </View>
+                        <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                             <Ionicons name="close" size={24} color="#AFAFAF" />
                         </TouchableOpacity>
                     </View>
@@ -48,12 +70,19 @@ export default function TipsModal({ visible, onClose, tips }: TipsModalProps) {
                         {tips.pronunciation && tips.pronunciation.length > 0 && (
                             <View style={styles.section}>
                                 <View style={styles.sectionHeader}>
-                                    <Ionicons name="mic" size={20} color="#1CB0F6" />
+                                    <TouchableOpacity onPress={() => Speech.speak(tips.pronunciation!.join('. '), { language: lang })}>
+                                        <Ionicons name="mic" size={20} color="#1CB0F6" />
+                                    </TouchableOpacity>
                                     <Text style={styles.sectionTitle}>Pronunciación</Text>
                                 </View>
                                 {tips.pronunciation.map((rule, index) => (
                                     <View key={index} style={styles.card}>
-                                        <Text style={styles.text}>{rule}</Text>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <Text style={styles.text}>{rule}</Text>
+                                            <TouchableOpacity onPress={() => Speech.speak(rule, { language: lang })} style={{ paddingLeft: 12 }}>
+                                                <Ionicons name="volume-high" size={20} color="#FFF" />
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
                                 ))}
                             </View>
@@ -73,7 +102,7 @@ export default function TipsModal({ visible, onClose, tips }: TipsModalProps) {
                     </ScrollView>
 
                     <View style={styles.footer}>
-                        <TouchableOpacity style={styles.button} onPress={onClose}>
+                        <TouchableOpacity style={styles.button} onPress={handleClose}>
                             <Text style={styles.buttonText}>Entendido</Text>
                         </TouchableOpacity>
                     </View>
@@ -112,13 +141,21 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#333',
     },
+    headerLeftRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flex: 1,
+    },
     modalTitle: {
         fontSize: 20,
         fontWeight: 'bold',
         color: '#FFF',
-        flex: 1,
     },
     closeButton: {
+        padding: 4,
+    },
+    speakAllButton: {
         padding: 4,
     },
     scrollView: {

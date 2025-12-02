@@ -9,10 +9,12 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function Signup() {
   const router = useRouter();
@@ -21,6 +23,18 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  const BG_URL = process.env.EXPO_PUBLIC_LANDING_BG_URL;
+  const localBg: any = (() => {
+    try {
+      return require('../assets/images/fondo.png');
+    } catch {
+      try {
+        return require('../assets/images/icon.png');
+      } catch {
+        return null;
+      }
+    }
+  })();
 
   const handleSignup = async () => {
     if (!email || !password || !username) {
@@ -49,7 +63,16 @@ export default function Signup() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      {(() => {
+        const bgSource: any = localBg ? localBg : (BG_URL ? { uri: BG_URL as string } : undefined);
+        return bgSource ? (
+          <>
+            <Image source={bgSource} style={styles.bgImage} resizeMode={Platform.OS === 'web' ? 'cover' : 'cover'} />
+            <LinearGradient colors={["rgba(0,0,0,0.2)", "rgba(0,0,0,0.6)"]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.bgOverlay} />
+          </>
+        ) : null;
+      })()}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
@@ -58,7 +81,6 @@ export default function Signup() {
         </TouchableOpacity>
 
         <View style={styles.header}>
-          <Text style={styles.logo}>🏛️</Text>
           <Text style={styles.title}>Crear Cuenta</Text>
           <Text style={styles.subtitle}>Comienza tu viaje en Maya</Text>
         </View>
@@ -126,10 +148,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
+    position: 'relative',
   },
   scrollContent: {
     flexGrow: 1,
     padding: 24,
+  },
+  bgImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    zIndex: 0,
+    pointerEvents: 'none',
+  },
+  bgOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+    pointerEvents: 'none',
   },
   backButton: {
     marginTop: 40,
@@ -146,7 +181,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#FFF',
+    color: '#58CC02',
     marginBottom: 8,
   },
   subtitle: {

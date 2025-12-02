@@ -1,20 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Alert,
   Animated,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../utils/api';
-import { Lesson, Exercise } from '../../types';
+import { Lesson } from '../../types';
+import * as Speech from 'expo-speech';
+import { Audio as ExpoAudio } from 'expo-av';
+import { Asset } from 'expo-asset';
+import * as Haptics from 'expo-haptics';
 
 export default function LessonScreen() {
   const router = useRouter();
@@ -34,11 +38,21 @@ export default function LessonScreen() {
   const [fadeAnim] = useState(new Animated.Value(1));
   const [selectedSelection, setSelectedSelection] = useState<{ type: 'maya' | 'spanish', value: string } | null>(null);
 
-  useEffect(() => {
-    if (lessonId) {
-      loadLesson();
-    }
-  }, [lessonId]);
+  const PALETTE = ['#1CB0F6', '#FF4B4B', '#FFC800', '#58CC02', '#A970FF', '#FF7F50'];
+  const getColorByMaya = (maya: string, pairs: { maya: string; spanish: string }[]) => {
+    const idx = pairs.findIndex(p => p.maya === maya);
+    const c = PALETTE[idx % PALETTE.length] || '#58CC02';
+    return c;
+  };
+  const getColorBySpanish = (spanish: string, pairs: { maya: string; spanish: string }[]) => {
+    const entry = Object.entries(matchedPairs).find(([, s]) => s === spanish);
+    if (!entry) return '#58CC02';
+    return getColorByMaya(entry[0], pairs);
+  };
+
+  
+
+  
 
   const handleSelection = (type: 'maya' | 'spanish', value: string) => {
     if (showFeedback) return;
@@ -66,7 +80,7 @@ export default function LessonScreen() {
     setSelectedSelection(null);
   };
 
-  const loadLesson = async () => {
+  const loadLesson = useCallback(async () => {
     try {
       const response = await api.get(`/api/lessons/${lessonId}`);
       setLesson(response.data);
@@ -77,10 +91,255 @@ export default function LessonScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [lessonId, router]);
+
+  useEffect(() => {
+    if (lessonId) {
+      loadLesson();
+    }
+  }, [lessonId, loadLesson]);
+
+  
 
   const currentExercise = lesson?.exercises[currentExerciseIndex];
   const progress = lesson ? ((currentExerciseIndex) / lesson.exercises.length) * 100 : 0;
+
+  const okSound: any = (() => {
+    try { return require('../../assets/sounds/duolingo_correct.mp3'); } catch {}
+    return null;
+  })();
+
+  const badSound: any = (() => {
+    try { return require('../../assets/sounds/duolingo_wrong.mp3'); } catch {}
+    return null;
+  })();
+
+  const webOkRef = useRef<any>(null);
+  const webBadRef = useRef<any>(null);
+  const webCtxRef = useRef<any>(null);
+  const okRef = useRef<ExpoAudio.Sound | null>(null);
+  const badRef = useRef<ExpoAudio.Sound | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      (async () => {
+        let okUrl: string | undefined;
+        let badUrl: string | undefined;
+        try {
+          if (okSound) {
+            const a = Asset.fromModule(okSound);
+            await a.downloadAsync().catch(() => {});
+            okUrl = (a as any).localUri || a.uri;
+          }
+        } catch {}
+        try {
+          if (badSound) {
+            const b = Asset.fromModule(badSound);
+            await b.downloadAsync().catch(() => {});
+            badUrl = (b as any).localUri || b.uri;
+          }
+        } catch {}
+        const envOk = (process as any).env?.EXPO_PUBLIC_CORRECT_SOUND_URL as string | undefined;
+        const envBad = (process as any).env?.EXPO_PUBLIC_INCORRECT_SOUND_URL as string | undefined;
+        const toAbs = (u?: string) => {
+          if (!u) return undefined;
+          try { return new URL(u, window.location.origin).toString(); } catch { return u; }
+        };
+        const finalOk = toAbs(okUrl || envOk);
+        const finalBad = toAbs(badUrl || envBad);
+        if (finalOk) {
+          try {
+            const el = new (window as any).Audio(finalOk);
+            el.preload = 'auto';
+            (el as any).crossOrigin = 'anonymous';
+            el.volume = 1;
+            webOkRef.current = el;
+          } catch {}
+        }
+        if (finalBad) {
+          try {
+            const el = new (window as any).Audio(finalBad);
+            el.preload = 'auto';
+            (el as any).crossOrigin = 'anonymous';
+            el.volume = 1;
+            webBadRef.current = el;
+          } catch {}
+        }
+      })();
+    }
+    (async () => {
+      try {
+        await ExpoAudio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      } catch {}
+    })();
+    const ok = okRef.current;
+    const bad = badRef.current;
+    return () => {
+      ok?.unloadAsync().catch(() => {});
+      bad?.unloadAsync().catch(() => {});
+    };
+  }, [okSound, badSound]);
+
+  const ensureWebCtx = () => {
+    try {
+      const Ctx: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!webCtxRef.current) webCtxRef.current = new Ctx();
+      webCtxRef.current.resume().catch(() => {});
+      return webCtxRef.current;
+    } catch {
+      return null;
+    }
+  };
+
+  const playBeepWeb = (freq: number, duration = 160) => {
+    try {
+      const ctx = ensureWebCtx();
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.6, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration / 1000);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration / 1000);
+    } catch {}
+  };
+
+  const playLocalSound = async (mod: any, correct: boolean) => {
+    try {
+      const asset = Asset.fromModule(mod);
+      await asset.downloadAsync().catch(() => {});
+      const uri: string = (asset as any).localUri || asset.uri;
+      if (Platform.OS === 'web') {
+        const el = correct ? webOkRef.current : webBadRef.current;
+        const urlAbs = (() => { try { return new URL(uri, window.location.origin).toString(); } catch { return uri; } })();
+          const audio = el || new (window as any).Audio(urlAbs);
+          (audio as any).crossOrigin = 'anonymous';
+          audio.volume = 1;
+          audio.currentTime = 0;
+          let started = false;
+          audio.onplaying = () => { started = true; };
+          try {
+            await audio.play();
+            setTimeout(() => {
+              if (!started) {
+                if (correct) {
+                  playBeepWeb(880, 140);
+                  setTimeout(() => playBeepWeb(660, 140), 160);
+                } else {
+                  playBeepWeb(220, 200);
+                }
+              }
+            }, 300);
+            return;
+          } catch {
+            try {
+              const Ctx: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+              const ctx = new Ctx();
+              await ctx.resume();
+            const res = await fetch(urlAbs);
+              const buf = await res.arrayBuffer();
+              const audioBuf = await ctx.decodeAudioData(buf);
+              const src = ctx.createBufferSource();
+              src.buffer = audioBuf;
+              src.connect(ctx.destination);
+              src.start(0);
+              return;
+            } catch {}
+            if (correct) {
+              playBeepWeb(880, 140);
+              setTimeout(() => playBeepWeb(660, 140), 160);
+            } else {
+              playBeepWeb(220, 200);
+            }
+            return;
+          }
+      }
+
+      const ref = correct ? okRef : badRef;
+      if (!ref.current) {
+        const created = await ExpoAudio.Sound.createAsync(mod, { shouldPlay: false });
+        ref.current = created.sound;
+      }
+      const soundObj = ref.current!;
+      await soundObj.setPositionAsync(0);
+      await soundObj.playAsync().catch(() => {
+        Speech.speak(correct ? 'Correcto' : 'Incorrecto', { language: 'es-MX', rate: 1 });
+      });
+    } catch {
+      if (Platform.OS === 'web') {
+        if (correct) {
+          playBeepWeb(880, 140);
+          setTimeout(() => playBeepWeb(660, 140), 160);
+        } else {
+          playBeepWeb(220, 200);
+        }
+      } else {
+        Speech.speak(correct ? 'Correcto' : 'Incorrecto', { language: 'es-MX', rate: 1 });
+      }
+    }
+  };
+
+  const playFeedback = (correct: boolean) => {
+    if (okSound || badSound) {
+      const mod = correct ? okSound : badSound;
+      if (mod) {
+        playLocalSound(mod, correct);
+        if (!correct && Platform.OS === 'web') {
+          setTimeout(() => {
+            playBeepWeb(220, 180);
+          }, 80);
+        }
+      }
+    } else if (Platform.OS === 'web') {
+      const okUrl = (process as any).env?.EXPO_PUBLIC_CORRECT_SOUND_URL as string | undefined;
+      const badUrl = (process as any).env?.EXPO_PUBLIC_INCORRECT_SOUND_URL as string | undefined;
+      const url = correct ? okUrl : badUrl;
+      if (url) {
+        try {
+          const audio = new (window as any).Audio(url);
+          audio.play().catch(() => {
+            if (correct) {
+              playBeepWeb(880, 140);
+              setTimeout(() => playBeepWeb(660, 140), 160);
+            } else {
+              playBeepWeb(220, 200);
+            }
+          });
+        } catch {
+          if (correct) {
+            playBeepWeb(880, 140);
+            setTimeout(() => playBeepWeb(660, 140), 160);
+          } else {
+            playBeepWeb(220, 200);
+          }
+        }
+      } else {
+        if (correct) {
+          playBeepWeb(880, 140);
+          setTimeout(() => playBeepWeb(660, 140), 160);
+        } else {
+          playBeepWeb(220, 200);
+        }
+      }
+    } else {
+      const okUrl = (process as any).env?.EXPO_PUBLIC_CORRECT_SOUND_URL as string | undefined;
+      const badUrl = (process as any).env?.EXPO_PUBLIC_INCORRECT_SOUND_URL as string | undefined;
+      const url = correct ? okUrl : badUrl;
+      if (url) {
+        ExpoAudio.Sound.createAsync({ uri: url }, { shouldPlay: true }).catch(() => {
+          Speech.speak(correct ? 'Correcto' : 'Incorrecto', { language: 'es-MX', rate: 1 });
+        });
+      } else {
+        Speech.speak(correct ? 'Correcto' : 'Incorrecto', { language: 'es-MX', rate: 1 });
+      }
+    }
+    Haptics.notificationAsync(correct ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error);
+  };
 
   const handleCheck = async () => {
     if (!currentExercise || !lesson) return;
@@ -98,6 +357,7 @@ export default function LessonScreen() {
 
     setIsCorrect(correct);
     setShowFeedback(true);
+    playFeedback(correct);
 
     if (correct) {
       setScore(score + 1);
@@ -105,11 +365,15 @@ export default function LessonScreen() {
       setWrongAnswers(wrongAnswers + 1);
       try {
         await api.post('/api/lessons/lose-life');
-        await refreshUser();
       } catch (error: any) {
-        // Just log the error, don't exit the lesson
-        console.log('Life lost:', error.response?.data);
+        console.log('Life lost:', error?.response?.data || error?.message);
       }
+      try {
+        await refreshUser();
+      } catch {
+        console.log('Refresh user failed after lose-life');
+      }
+      // Esperar a que el usuario presione "Continuar" (sin auto-avance)
     }
 
     Animated.sequence([
@@ -141,6 +405,7 @@ export default function LessonScreen() {
     }
   };
 
+
   const completeLesson = async () => {
     if (!lesson) return;
 
@@ -163,17 +428,7 @@ export default function LessonScreen() {
     }
   };
 
-  const handleMatchPair = (maya: string, spanish: string) => {
-    const newMatched = { ...matchedPairs };
-
-    if (newMatched[maya] === spanish) {
-      delete newMatched[maya];
-    } else {
-      newMatched[maya] = spanish;
-    }
-
-    setMatchedPairs(newMatched);
-  };
+  
 
   const renderExercise = () => {
     if (!currentExercise) return null;
@@ -213,7 +468,6 @@ export default function LessonScreen() {
 
     if (currentExercise.type === 'matching') {
       const pairs = currentExercise.pairs || [];
-      const isComplete = Object.keys(matchedPairs).length === pairs.length;
 
       return (
         <View style={styles.exerciseContainer}>
@@ -232,10 +486,20 @@ export default function LessonScreen() {
                     style={[
                       styles.matchingCard,
                       isSelected && styles.matchingCardSelected,
-                      isMatched && styles.matchingCardMatched,
+                      isMatched && { borderColor: getColorByMaya(pair.maya, pairs) },
                     ]}
-                    onPress={() => !isMatched && handleSelection('maya', pair.maya)}
-                    disabled={showFeedback || isMatched}
+                    onPress={() => {
+                      if (showFeedback) return;
+                      if (isMatched) {
+                        const nm = { ...matchedPairs };
+                        delete nm[pair.maya];
+                        setMatchedPairs(nm);
+                        setSelectedSelection(null);
+                        return;
+                      }
+                      handleSelection('maya', pair.maya);
+                    }}
+                    disabled={showFeedback}
                   >
                     <Text style={styles.matchingText}>{pair.maya}</Text>
                   </TouchableOpacity>
@@ -255,10 +519,23 @@ export default function LessonScreen() {
                     style={[
                       styles.matchingCard,
                       isSelected && styles.matchingCardSelected,
-                      isMatched && styles.matchingCardMatched,
+                      isMatched && { borderColor: getColorBySpanish(pair.spanish, pairs) },
                     ]}
-                    onPress={() => !isMatched && handleSelection('spanish', pair.spanish)}
-                    disabled={showFeedback || isMatched}
+                    onPress={() => {
+                      if (showFeedback) return;
+                      if (isMatched) {
+                        const mayaKey = Object.entries(matchedPairs).find(([, s]) => s === pair.spanish)?.[0];
+                        if (mayaKey) {
+                          const nm = { ...matchedPairs };
+                          delete nm[mayaKey];
+                          setMatchedPairs(nm);
+                          setSelectedSelection(null);
+                          return;
+                        }
+                      }
+                      handleSelection('spanish', pair.spanish);
+                    }}
+                    disabled={showFeedback}
                   >
                     <Text style={styles.matchingText}>{pair.spanish}</Text>
                   </TouchableOpacity>
@@ -302,6 +579,7 @@ export default function LessonScreen() {
           <Ionicons name="heart" size={24} color="#FF4B4B" />
           <Text style={styles.heartsText}>{user?.lives || 0}</Text>
         </View>
+
       </View>
 
       <Animated.ScrollView
@@ -362,6 +640,17 @@ export default function LessonScreen() {
             disabled={!selectedAnswer && Object.keys(matchedPairs).length === 0}
           >
             <Text style={styles.checkButtonText}>Verificar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.checkButton, { backgroundColor: '#1C1C1E', marginTop: 12, borderWidth: 2, borderColor: '#333' }]}
+            onPress={() => {
+              if (showFeedback) return;
+              setMatchedPairs({});
+              setSelectedSelection(null);
+              setSelectedAnswer('');
+            }}
+          >
+            <Text style={[styles.checkButtonText, { color: '#1CB0F6' }]}>Cambiar respuestas</Text>
           </TouchableOpacity>
         </View>
       )
