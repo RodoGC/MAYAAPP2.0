@@ -6,6 +6,8 @@ export interface User {
   lives: number;
   streak: number;
   level: number;
+  profile_image_url?: string;
+  last_activity?: string;
 }
 
 export interface Exercise {
@@ -42,6 +44,7 @@ export interface DictionaryEntry {
   spanish: string;
   category: string;
   audio?: string;
+  image_url?: string;
 }
 
 export interface Tips {

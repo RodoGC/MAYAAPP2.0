@@ -74,7 +74,7 @@ export default function Login() {
           </>
         ) : null;
       })()}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}

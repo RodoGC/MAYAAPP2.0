@@ -1,7 +1,8 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, File, UploadFile
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -58,6 +59,7 @@ class UserResponse(BaseModel):
     lives: int
     streak: int
     level: int
+    profile_image_url: Optional[str] = None
 
 class LessonProgress(BaseModel):
     lesson_id: str
@@ -897,6 +899,19 @@ DICTIONARY = [
     ,{"maya": "Ma' k'áatchi'", "spanish": "De nada", "category": "Saludos"}
     ,{"maya": "Noj", "spanish": "Grande", "category": "Adjetivos"}
     ,{"maya": "Chan", "spanish": "Pequeño", "category": "Adjetivos"}
+    ,{"maya": "Naj", "spanish": "Casa", "category": "Sustantivos"}
+    ,{"maya": "Che'", "spanish": "Árbol", "category": "Sustantivos"}
+    ,{"maya": "Uh", "spanish": "Luna", "category": "Sustantivos"}
+    ,{"maya": "K'iin", "spanish": "Sol", "category": "Sustantivos"}
+    ,{"maya": "Ek'", "spanish": "Estrella", "category": "Sustantivos"}
+    ,{"maya": "Ma'alob k'iin", "spanish": "Buen día", "category": "Frases"}
+    ,{"maya": "Mix ba'al", "spanish": "Nada (no hay problema)", "category": "Frases"}
+    ,{"maya": "Jach ki'", "spanish": "Muy bien", "category": "Frases"}
+    ,{"maya": "Meentik a wich", "spanish": "Por favor", "category": "Frases"}
+    ,{"maya": "Ko'ox", "spanish": "Vamos", "category": "Frases"}
+    ,{"maya": "Tu'ux ka bin?", "spanish": "¿A dónde vas?", "category": "Frases"}
+    ,{"maya": "Ba'ax ka wa'alik?", "spanish": "¿Qué dices?", "category": "Frases"}
+    ,{"maya": "Ma'alo'ob", "spanish": "Bien", "category": "Frases"}
 ]
 
 # ============= HELPER FUNCTIONS =============
@@ -1001,7 +1016,8 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         "xp": current_user.get("xp", 0),
         "lives": current_user.get("lives", 5),
         "streak": current_user.get("streak", 0),
-        "level": calculate_level(current_user.get("xp", 0))
+        "level": calculate_level(current_user.get("xp", 0)),
+        "profile_image_url": current_user.get("profile_image_url")
     }
 
 # ============= AUDIO PROXY ENDPOINT =============
@@ -1302,6 +1318,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/static", StaticFiles(directory=ROOT_DIR / "static"), name="static")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -1312,3 +1330,25 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+# ============= USER PROFILE IMAGE =============
+
+@api_router.post("/user/profile-image")
+async def upload_profile_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    content_type = file.content_type or ""
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    ext = ".jpg"
+    if "/" in content_type:
+        maybe_ext = content_type.split("/")[-1]
+        if maybe_ext in ["jpeg", "jpg", "png", "webp"]:
+            ext = "." + ("jpg" if maybe_ext == "jpeg" else maybe_ext)
+    static_dir = ROOT_DIR / "static" / "profile_images"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{str(current_user['_id'])}{ext}"
+    filepath = static_dir / filename
+    data = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(data)
+    url_path = f"/static/profile_images/{filename}"
+    await db.users.update_one({"_id": current_user["_id"]}, {"$set": {"profile_image_url": url_path}})
+    return {"url": url_path}

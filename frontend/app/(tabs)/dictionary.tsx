@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,29 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Image,
+  Modal,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../../utils/api';
 import { DictionaryEntry } from '../../types';
-import axios from 'axios';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { Buffer } from 'buffer';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const MS_TRANSLATOR_ENDPOINT = '/api/translate';
+
+const CHIPS = [
+  { key: 'Verbos', icon: 'gesture', color: '#58CC02' },
+  { key: 'Sustantivos', icon: 'format-letter-case', color: '#1CB0F6' },
+  { key: 'Frases', icon: 'format-quote-close', color: '#FFC800' },
+  { key: 'Comida', icon: 'food-fork-drink', color: '#FF9600' },
+  { key: 'Animales', icon: 'paw', color: '#A05A2C' },
+] as const;
 
 export default function DictionaryScreen() {
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
@@ -35,6 +46,24 @@ export default function DictionaryScreen() {
   const [webVoices, setWebVoices] = useState<any[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const [webPaused, setWebPaused] = useState(false);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [detailEntry, setDetailEntry] = useState<DictionaryEntry | null>(null);
+  const texture: any = (() => {
+    try {
+      return require('../../assets/images/fondo.png');
+    } catch {
+      return null;
+    }
+  })();
+
+  const accent = '#58CC02';
+  const inputGlow = useRef(new Animated.Value(0)).current;
+  const btnScale = useRef(new Animated.Value(1)).current;
+  const resultAnim = useRef(new Animated.Value(0)).current;
+  const searchGlow = useRef(new Animated.Value(0)).current;
+  const isWeb = Platform.OS === 'web';
 
   useEffect(() => {
     loadDictionary();
@@ -52,6 +81,15 @@ export default function DictionaryScreen() {
     }
   }, [selectedVoice]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem('favorites_words');
+        if (raw) setFavorites(JSON.parse(raw));
+      } catch {}
+    })();
+  }, []);
+
   useFocusEffect(React.useCallback(() => {
     return () => {
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -64,19 +102,20 @@ export default function DictionaryScreen() {
   }, []));
 
   useEffect(() => {
+    let list = entries;
     if (searchText) {
-      const filtered = entries
-        .filter(
-          (entry) =>
-            entry.maya.toLowerCase().includes(searchText.toLowerCase()) ||
-            entry.spanish.toLowerCase().includes(searchText.toLowerCase())
-        )
-        .sort((a, b) => a.maya.localeCompare(b.maya));
-      setFilteredEntries(filtered);
-    } else {
-      setFilteredEntries(entries);
+      list = list.filter(
+        (entry) =>
+          entry.maya.toLowerCase().includes(searchText.toLowerCase()) ||
+          entry.spanish.toLowerCase().includes(searchText.toLowerCase())
+      );
     }
-  }, [searchText, entries]);
+    if (activeTag) {
+      list = list.filter((entry) => (entry.category || '').toLowerCase().includes(activeTag.toLowerCase()));
+    }
+    list = list.sort((a, b) => a.maya.localeCompare(b.maya));
+    setFilteredEntries(list);
+  }, [searchText, entries, activeTag]);
 
   const loadDictionary = async () => {
     try {
@@ -89,23 +128,64 @@ export default function DictionaryScreen() {
     }
   };
 
+  const normalize = (s: string) => s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Zñáéíóúü\s]/g, ' ')
+    .trim();
+
+  const translateFallback = (text: string) => {
+    if (!text) return '';
+    const tokens = normalize(text).split(/\s+/);
+    const map = new Map<string, string>();
+    for (const e of entries) {
+      map.set(normalize(e.spanish), e.maya);
+    }
+    const out = tokens.map(t => map.get(t) || t).join(' ');
+    return out;
+  };
+
   const handleTranslate = async () => {
     if (!translationInput.trim()) return;
 
     setIsTranslating(true);
     try {
       const response = await api.post(MS_TRANSLATOR_ENDPOINT, { text: translationInput, from_lang: 'es', to_lang: 'yua' });
-      if (response.data && response.data.text) {
-        setTranslatedText(response.data.text);
-      } else {
-        Alert.alert('Error', 'No se pudo obtener la traducción');
+      const viaApi = response.data && response.data.text ? String(response.data.text) : '';
+      const finalText = viaApi || translateFallback(translationInput);
+      if (!finalText) {
+        Alert.alert('Sin traducción', 'Prueba con otra palabra o frase corta');
       }
-    } catch (error) {
-      console.error('Translation error:', error);
-      Alert.alert('Error', 'No se pudo traducir el texto');
+      setTranslatedText(finalText);
+      resultAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(resultAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
+    } catch {
+      const fallback = translateFallback(translationInput);
+      setTranslatedText(fallback);
+      resultAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(resultAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
     } finally {
       setIsTranslating(false);
     }
+  };
+
+  const toggleFavorite = async (word: string) => {
+    const exists = favorites.includes(word);
+    const next = exists ? favorites.filter(w => w !== word) : [...favorites, word];
+    setFavorites(next);
+    try {
+      await AsyncStorage.setItem('favorites_words', JSON.stringify(next));
+    } catch {}
+  };
+
+  const openDetail = (item: DictionaryEntry) => {
+    setDetailEntry(item);
+    setDetailVisible(true);
   };
 
   const playAudio = async (text: string) => {
@@ -199,28 +279,39 @@ export default function DictionaryScreen() {
     }
   };
 
-  const renderEntry = ({ item }: { item: DictionaryEntry }) => (
-    <View style={styles.entryCard}>
-      <View style={styles.entryContent}>
-        <Text style={styles.mayaText}>{item.maya}</Text>
-        <Text style={styles.spanishText}>{item.spanish}</Text>
-      </View>
-      <View style={styles.rightContent}>
-        <View style={styles.categoryBadge}>
-          <Text style={styles.categoryText}>{item.category}</Text>
+  const renderEntry = ({ item }: { item: DictionaryEntry }) => {
+    const fav = favorites.includes(item.maya);
+    return (
+      <TouchableOpacity style={styles.entryCard} onPress={() => openDetail(item)}>
+        <View style={styles.entryContent}>
+          <View style={styles.titleRow}>
+            <Text style={styles.mayaText}>{item.maya}</Text>
+            <TouchableOpacity style={styles.favButton} onPress={() => toggleFavorite(item.maya)}>
+              <Ionicons name={fav ? 'star' : 'star-outline'} size={18} color={fav ? '#FFC800' : '#AFAFAF'} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.spanishText}>{item.spanish}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.audioButton}
-          onPress={() => playAudio(item.maya)}
-        >
-          <Ionicons name="volume-high" size={24} color="#1CB0F6" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+        <View style={styles.rightContent}>
+          <View style={styles.categoryBadge}>
+            <Text style={styles.categoryText}>{item.category}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.audioButton}
+            onPress={() => playAudio(item.maya)}
+          >
+            <Ionicons name="volume-high" size={24} color="#1CB0F6" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {texture ? (
+        <Image source={texture} style={styles.bgTexture} resizeMode="cover" />
+      ) : null}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Diccionario Maya</Text>
       </View>
@@ -228,28 +319,59 @@ export default function DictionaryScreen() {
       <View style={styles.translatorContainer}>
         <Text style={styles.sectionTitle}>Traductor en tiempo real (Español - Maya)</Text>
         <View style={styles.translatorBox}>
-          <TextInput
-            style={styles.translatorInput}
-            placeholder="Escribe en español..."
-            placeholderTextColor="#AFAFAF"
-            value={translationInput}
-            onChangeText={setTranslationInput}
-            multiline
-          />
-          <TouchableOpacity
-            style={styles.translateButton}
-            onPress={handleTranslate}
-            disabled={isTranslating}
+          <Animated.View
+            style={[
+              styles.translatorInputWrap,
+              {
+                shadowColor: accent,
+                shadowOpacity: inputGlow.interpolate({ inputRange: [0, 1], outputRange: [0, 0.55] }),
+                shadowRadius: inputGlow.interpolate({ inputRange: [0, 1], outputRange: [0, 12] }),
+                shadowOffset: { width: 0, height: 0 },
+                borderColor: inputGlow.interpolate({ inputRange: [0, 1], outputRange: ['#333', accent] }),
+              },
+            ]}
           >
-            {isTranslating ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.translateButtonText}>Traducir</Text>
-            )}
-          </TouchableOpacity>
+            <TextInput
+              style={styles.translatorInput}
+              placeholder="Escribe en español..."
+              placeholderTextColor="#AFAFAF"
+              value={translationInput}
+              onChangeText={setTranslationInput}
+              multiline
+              onFocus={() => {
+                Animated.timing(inputGlow, { toValue: 1, duration: 220, useNativeDriver: false }).start();
+              }}
+              onBlur={() => {
+                Animated.timing(inputGlow, { toValue: 0, duration: 220, useNativeDriver: false }).start();
+              }}
+            />
+          </Animated.View>
+          <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+            <TouchableOpacity
+              style={styles.translateButton}
+              onPress={handleTranslate}
+              disabled={isTranslating}
+              onPressIn={() => Animated.timing(btnScale, { toValue: 0.97, duration: 80, useNativeDriver: true }).start()}
+              onPressOut={() => Animated.timing(btnScale, { toValue: 1, duration: 80, useNativeDriver: true }).start()}
+            >
+              {isTranslating ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.translateButtonText}>Traducir</Text>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
         </View>
         {translatedText ? (
-          <View style={styles.resultBox}>
+          <Animated.View
+            style={[
+              styles.resultBox,
+              {
+                transform: [{ translateY: resultAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+                opacity: resultAnim,
+              },
+            ]}
+          >
             <View style={styles.resultHeader}>
               <Text style={styles.resultLabel}>Resultado:</Text>
               <TouchableOpacity
@@ -263,7 +385,7 @@ export default function DictionaryScreen() {
               <TouchableOpacity style={styles.controlButton} onPress={stopSpeaking}>
                 <Ionicons name="stop" size={18} color="#FFF" />
               </TouchableOpacity>
-              {Platform.OS === 'web' ? (
+              {isWeb ? (
                 webPaused ? (
                   <TouchableOpacity style={styles.controlButton} onPress={resumeSpeaking}>
                     <Ionicons name="play" size={18} color="#FFF" />
@@ -281,18 +403,29 @@ export default function DictionaryScreen() {
               <TouchableOpacity style={styles.controlButton} onPress={incRate}>
                 <Text style={styles.controlText}>+</Text>
               </TouchableOpacity>
-              {Platform.OS === 'web' && webVoices.length ? (
+              {isWeb && webVoices.length ? (
                 <TouchableOpacity style={styles.voiceButton} onPress={nextVoice}>
                   <Text style={styles.voiceText}>{selectedVoice || 'voz'}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
             <Text style={styles.resultText}>{translatedText}</Text>
-          </View>
+          </Animated.View>
         ) : null}
       </View>
 
-      <View style={styles.searchContainer}>
+      <Animated.View
+        style={[
+          styles.searchContainer,
+          {
+            shadowColor: accent,
+            shadowOpacity: searchGlow.interpolate({ inputRange: [0, 1], outputRange: [0, 0.45] }),
+            shadowRadius: searchGlow.interpolate({ inputRange: [0, 1], outputRange: [0, 10] }),
+            shadowOffset: { width: 0, height: 0 },
+            borderColor: searchGlow.interpolate({ inputRange: [0, 1], outputRange: ['#333', accent] }),
+          },
+        ]}
+      >
         <Ionicons name="search" size={20} color="#AFAFAF" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
@@ -300,12 +433,30 @@ export default function DictionaryScreen() {
           value={searchText}
           onChangeText={setSearchText}
           placeholderTextColor="#AFAFAF"
+          onFocus={() => Animated.timing(searchGlow, { toValue: 1, duration: 200, useNativeDriver: false }).start()}
+          onBlur={() => Animated.timing(searchGlow, { toValue: 0, duration: 200, useNativeDriver: false }).start()}
         />
         {searchText ? (
           <TouchableOpacity onPress={() => setSearchText('')}>
             <Ionicons name="close-circle" size={20} color="#AFAFAF" />
           </TouchableOpacity>
         ) : null}
+      </Animated.View>
+
+      <View style={styles.chipsRow}>
+        {CHIPS.map(chip => {
+          const active = activeTag === chip.key;
+          return (
+            <TouchableOpacity
+              key={chip.key}
+              style={[styles.chip, active && { backgroundColor: '#1C2A34', borderColor: accent }]}
+              onPress={() => setActiveTag(active ? null : chip.key)}
+            >
+              <MaterialCommunityIcons name={chip.icon as any} size={14} color={active ? accent : '#AFAFAF'} />
+              <Text style={[styles.chipText, active && { color: '#FFF' }]}>{chip.key}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <FlatList
@@ -313,6 +464,7 @@ export default function DictionaryScreen() {
         renderItem={renderEntry}
         keyExtractor={(item, index) => `${item.maya}-${index}`}
         contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="search" size={64} color="#333" />
@@ -320,6 +472,42 @@ export default function DictionaryScreen() {
           </View>
         }
       />
+
+      <Modal visible={detailVisible} transparent animationType="fade" onRequestClose={() => setDetailVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {detailEntry ? (
+              <>
+                {detailEntry.image_url ? (
+                  <Image source={{ uri: detailEntry.image_url as any }} style={styles.modalImage} />
+                ) : (
+                  <View style={styles.modalImage} />
+                )}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.modalTitle}>{detailEntry.maya}</Text>
+                  <TouchableOpacity onPress={() => playAudio(detailEntry.maya)}>
+                    <Ionicons name="volume-high" size={22} color="#1CB0F6" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.modalSubtitle}>{detailEntry.spanish}</Text>
+                <Text style={styles.modalExample}>{(() => {
+                  const cat = (detailEntry.category || '').toLowerCase();
+                  if (cat.includes('animal')) return `Ejemplo: Hoy vi un ${detailEntry.spanish} en el bosque.`;
+                  if (cat.includes('comida')) return `Ejemplo: Me gusta la ${detailEntry.spanish}.`;
+                  if (cat.includes('frase')) return `Ejemplo: Dijo: "${detailEntry.spanish}".`;
+                  if (cat.includes('verbo')) return `Ejemplo: Quiero ${detailEntry.spanish} mañana.`;
+                  return `Ejemplo: Aprendo ${detailEntry.spanish}.`;
+                })()}</Text>
+                <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                  <TouchableOpacity onPress={() => setDetailVisible(false)} style={[styles.controlButton, { backgroundColor: '#1CB0F6', borderColor: '#1CB0F6' }]}>
+                    <Text style={{ color: '#000', fontWeight: '700' }}>Cerrar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -328,6 +516,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
+    position: 'relative',
+  },
+  bgTexture: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.08,
+    zIndex: 0,
+    pointerEvents: 'none',
   },
   header: {
     paddingHorizontal: 16,
@@ -356,15 +551,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  translatorInput: {
+  translatorInputWrap: {
     flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  translatorInput: {
     backgroundColor: '#1C1C1E',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 12,
     color: '#FFF',
     fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#333',
   },
   translateButton: {
     backgroundColor: '#58CC02',
@@ -372,6 +570,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   translateButtonText: {
     color: '#FFF',
@@ -379,11 +582,11 @@ const styles = StyleSheet.create({
   },
   resultBox: {
     marginTop: 12,
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#0F1F2A',
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: '#1CB0F6',
   },
   resultHeader: {
     flexDirection: 'row',
@@ -443,7 +646,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1C1C1E',
     margin: 16,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#333',
   },
@@ -454,6 +657,30 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#FFF',
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1C1C1E',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  chipText: {
+    color: '#AFAFAF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   listContent: {
     padding: 16,
@@ -472,6 +699,15 @@ const styles = StyleSheet.create({
   },
   entryContent: {
     flex: 1,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  favButton: {
+    padding: 4,
   },
   mayaText: {
     fontSize: 18,
@@ -500,6 +736,43 @@ const styles = StyleSheet.create({
   },
   audioButton: {
     padding: 4,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: '#0F1F2A',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1CB0F6',
+    padding: 16,
+  },
+  modalImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#1C1C1E',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    color: '#58CC02',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  modalSubtitle: {
+    color: '#FFF',
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  modalExample: {
+    color: '#AFAFAF',
+    fontSize: 14,
   },
   emptyContainer: {
     alignItems: 'center',

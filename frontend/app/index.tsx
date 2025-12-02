@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, Redirect } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
  
 
 export default function Index() {
@@ -10,6 +10,8 @@ export default function Index() {
   const { user, loading } = useAuth();
   const BG_URL = process.env.EXPO_PUBLIC_LANDING_BG_URL;
   const [bgDataUrl, setBgDataUrl] = useState<string | null>(null);
+  const [showIntro, setShowIntro] = useState(true);
+  const introOpacity = useRef(new Animated.Value(1)).current;
   const localBg: any = (() => {
     try {
       return require('../assets/images/fondo.png');
@@ -31,6 +33,17 @@ export default function Index() {
     }
   }, []);
 
+  useEffect(() => {
+    if (showIntro) {
+      const t = setTimeout(() => {
+        Animated.timing(introOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
+          setShowIntro(false);
+        });
+      }, 7000);
+      return () => clearTimeout(t);
+    }
+  }, [showIntro, introOpacity]);
+
  
 
   if (loading) {
@@ -49,41 +62,36 @@ export default function Index() {
     localBg ? localBg : (BG_URL ? { uri: BG_URL as string } : (bgDataUrl ? { uri: bgDataUrl as string } : undefined));
 
   return (
-    <LinearGradient colors={["#0b2e27", "#0f3f35", "#13463a"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.gradientBg}>
+    <View style={styles.container}>
+      {bgSource ? (
+        <>
+          <Image source={bgSource} style={styles.bgImage} resizeMode="cover" />
+          <LinearGradient colors={["rgba(0,0,0,0.20)", "rgba(0,0,0,0.60)"]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.bgOverlay} />
+        </>
+      ) : null}
+      {showIntro && (
+        <Animated.View style={[styles.introOverlay, { opacity: introOpacity }]}>
+          <View style={styles.introContent}>
+            <Text style={styles.introTitle}>MayaApp</Text>
+            <Text style={styles.introSubtitle}>Aprende el idioma Maya de forma divertida y efectiva</Text>
+          </View>
+        </Animated.View>
+      )}
       <View style={styles.page}>
-        <View style={styles.imageCard}>
-          {bgSource ? (
-            <Image source={bgSource} style={styles.bgImage} resizeMode="contain" />
-          ) : null}
-          <View style={styles.cardOverlay} />
-          <LinearGradient
-            colors={["transparent", "rgba(0,0,0,0.45)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.fadeBottom}
-          />
-          <View style={styles.cardContent}>
-            <Text style={styles.titleCard}>MayaApp</Text>
-            <Text style={styles.subtitleCard}>Aprende el idioma Maya de forma divertida y efectiva</Text>
-          </View>
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.push('/signup')}
-            >
-              <Text style={styles.primaryButtonText}>Comenzar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => router.push('/login')}
-            >
-              <Text style={styles.secondaryButtonText}>Ya tengo cuenta</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.cardContent}>
+          <Text style={styles.titleCard}>MayaApp</Text>
+          <Text style={styles.subtitleCard}>Aprende el idioma Maya de forma divertida y efectiva</Text>
+        </View>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/signup')}>
+            <Text style={styles.primaryButtonText}>Comenzar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/login')}>
+            <Text style={styles.secondaryButtonText}>Ya tengo cuenta</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -91,8 +99,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
-    justifyContent: 'space-between',
-    padding: 24,
+    position: 'relative',
   },
   fullBg: {
     flex: 1,
@@ -107,42 +114,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
   },
-  imageCard: {
-    alignSelf: 'center',
-    width: '90%',
-    maxWidth: 768,
-    aspectRatio: 1,
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-    marginTop: 16,
-  },
+  
   imageCardImage: {
     borderRadius: 24,
   },
   bgImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
+    zIndex: 0,
     pointerEvents: 'none',
   },
-  cardOverlay: {
+  bgOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    zIndex: 0,
     pointerEvents: 'none',
   },
-  fadeBottom: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '35%',
-    zIndex: 1,
-    pointerEvents: 'none',
+  introOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0f3f35',
+    zIndex: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  introContent: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  introTitle: {
+    fontSize: 64,
+    fontWeight: '800',
+    color: '#58CC02',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  introSubtitle: {
+    fontSize: 20,
+    color: '#FFFFFF',
+    opacity: 0.95,
+    textAlign: 'center',
   },
   cardContent: {
     position: 'absolute',
@@ -163,10 +173,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     opacity: 0.95,
   },
-  gradientBg: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
+  
   fullBgImage: {
     opacity: 1,
   },
@@ -185,10 +192,6 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingHorizontal: 12,
     paddingVertical: 16,
-  },
-  bgOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   title: {
     fontSize: 48,

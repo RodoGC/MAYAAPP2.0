@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,14 +9,16 @@ import {
   Alert,
   Platform,
   Image,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../contexts/AuthContext';
-import api from '../../utils/api';
+import api, { absoluteUrl } from '../../utils/api';
 
 interface UserStats {
   username: string;
@@ -31,14 +33,49 @@ interface UserStats {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  
+  const glowAnim = useRef(new Animated.Value(0)).current;
+  const prevLevelRef = useRef<number | null>(null);
+
+  const loadProfileImage = useCallback(async () => {
+    try {
+      if (user?.profile_image_url) {
+        setProfileImage(absoluteUrl(user.profile_image_url));
+        return;
+      }
+      const savedImage = await AsyncStorage.getItem('profile_image');
+      if (savedImage) setProfileImage(savedImage);
+    } catch {}
+  }, [user?.profile_image_url]);
 
   useEffect(() => {
     loadStats();
     loadProfileImage();
-  }, []);
+  }, [loadProfileImage]);
+
+  useEffect(() => {
+    const currentLevel = user?.level ?? 0;
+    if (prevLevelRef.current !== null && prevLevelRef.current !== currentLevel) {
+      const pulse = () => {
+        Animated.sequence([
+          Animated.timing(glowAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
+        ]).start(({ finished }) => {
+          if (finished) {
+            if ((pulse as any).count === undefined) (pulse as any).count = 0;
+            (pulse as any).count += 1;
+            if ((pulse as any).count < 3) pulse();
+          }
+        });
+      };
+      (pulse as any).count = 0;
+      pulse();
+    }
+    prevLevelRef.current = currentLevel;
+  }, [user?.level, glowAnim]);
 
   const loadStats = async () => {
     try {
@@ -49,16 +86,13 @@ export default function ProfileScreen() {
     }
   };
 
-  const loadProfileImage = async () => {
-    try {
-      const savedImage = await AsyncStorage.getItem('profile_image');
-      if (savedImage) {
-        setProfileImage(savedImage);
-      }
-    } catch (error) {
-      console.error('Error loading profile image:', error);
-    }
-  };
+  
+
+  useEffect(() => {
+    loadProfileImage();
+  }, [loadProfileImage]);
+
+  
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -77,8 +111,26 @@ export default function ProfileScreen() {
 
     if (!result.canceled) {
       const uri = result.assets[0].uri;
-      setProfileImage(uri);
-      await AsyncStorage.setItem('profile_image', uri);
+      try {
+        const form = new FormData();
+        const name = `profile-${user?.id || 'me'}.jpg`;
+        if (Platform.OS === 'web') {
+          const blob = await (await fetch(uri)).blob();
+          form.append('file', blob, name);
+        } else {
+          form.append('file', { uri, name, type: 'image/jpeg' } as any);
+        }
+        const response = await api.post('/api/user/profile-image', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        const url = response.data.url as string;
+        const abs = absoluteUrl(url);
+        setProfileImage(abs);
+        await AsyncStorage.setItem('profile_image', abs);
+        await refreshUser();
+      } catch {
+        Alert.alert('Error', 'No se pudo subir la imagen');
+      }
     }
   };
 
@@ -116,26 +168,69 @@ export default function ProfileScreen() {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.userCard}>
-          <TouchableOpacity style={styles.avatarContainer} onPress={pickImage}>
-            {profileImage ? (
-              <Image source={{ uri: profileImage }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={48} color="#FFF" />
-              </View>
-            )}
-            <View style={styles.editIcon}>
-              <Ionicons name="camera" size={16} color="#FFF" />
-            </View>
+          <TouchableOpacity onPress={pickImage}>
+            <Animated.View style={[styles.ceremonialFrame, { opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.7] }) }]}>
+            <LinearGradient
+              colors={(user?.level || 0) > 0 ? ['#FFC800', '#FF9600', '#FFC800'] : ['#333', '#222', '#333']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.ceremonialFrameInner}
+             >
+                {profileImage ? (
+                  <Image source={{ uri: profileImage }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Ionicons name="person" size={48} color="#FFF" />
+                  </View>
+                )}
+                <View style={styles.editIcon}>
+                  <Ionicons name="camera" size={16} color="#FFF" />
+                </View>
+              </LinearGradient>
+            </Animated.View>
           </TouchableOpacity>
 
-          <Text style={styles.username}>{user?.username}</Text>
+          <Text style={[
+            styles.username,
+            user?.username === 'rodogc' && styles.usernameAccent,
+          ]}>{user?.username}</Text>
           <Text style={styles.email}>{user?.email}</Text>
           <View style={styles.levelBadge}>
             <Ionicons name="star" size={20} color="#FFC800" />
-            <Text style={styles.levelText}>Nivel {user?.level || 0}</Text>
+            <Text style={styles.levelText}>
+              {(() => {
+                const lvl = user?.level || 0;
+                if (lvl === 0) return 'Aprendiz Maya';
+                if (lvl === 1) return 'Explorador';
+                return `Nivel ${lvl}`;
+              })()}
+            </Text>
+          </View>
+          <View style={styles.levelProgressContainer}>
+            <Text style={styles.levelProgressTitle}>Progreso de Nivel</Text>
+            {(() => {
+              const lvl = user?.level || 0;
+              const currentXp = (stats?.xp ?? user?.xp ?? 0);
+              const getThreshold = (level: number) => 100 + level * 100;
+              let sumPrev = 0;
+              for (let i = 0; i < lvl; i += 1) sumPrev += getThreshold(i);
+              const xpInLevel = Math.max(0, currentXp - sumPrev);
+              const threshold = getThreshold(lvl);
+              const xpToNext = Math.max(0, threshold - xpInLevel);
+              const progressPct = Math.min(100, Math.round(((threshold - xpToNext) / threshold) * 100));
+              return (
+                <View>
+                  <View style={styles.levelProgressBarContainer}>
+                    <View style={[styles.levelProgressBar, { width: `${progressPct}%` }]} />
+                  </View>
+                  <Text style={styles.levelProgressRemaining}>Faltan {xpToNext} XP para Nivel {lvl + 1}</Text>
+                </View>
+              );
+            })()}
           </View>
         </View>
+
+        
 
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
@@ -165,20 +260,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>Progreso General</Text>
-            <Text style={styles.progressPercentage}>{stats?.progress_percentage || 0}%</Text>
-          </View>
-          <View style={styles.progressBarContainer}>
-            <View
-              style={[
-                styles.progressBar,
-                { width: `${stats?.progress_percentage || 0}%` }
-              ]}
-            />
-          </View>
-        </View>
+        
 
         <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={24} color="#FF4B4B" />
@@ -225,9 +307,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
+  
   avatarContainer: {
     position: 'relative',
     marginBottom: 16,
+  },
+  ceremonialFrame: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 5,
+    marginBottom: 16,
+  },
+  ceremonialFrameInner: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 5,
   },
   avatarPlaceholder: {
     width: 100,
@@ -261,6 +361,9 @@ const styles = StyleSheet.create({
     color: '#FFF',
     marginBottom: 4,
   },
+  usernameAccent: {
+    color: '#1CB0F6',
+  },
   email: {
     fontSize: 14,
     color: '#AFAFAF',
@@ -279,6 +382,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFC800',
+  },
+  levelProgressContainer: {
+    width: '100%',
+    marginTop: 12,
+  },
+  levelProgressTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  levelProgressBarContainer: {
+    height: 12,
+    backgroundColor: '#333',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  levelProgressBar: {
+    height: '100%',
+    backgroundColor: '#1CB0F6',
+    borderRadius: 6,
+  },
+  levelProgressRemaining: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#AFAFAF',
+    textAlign: 'center',
   },
   statsGrid: {
     flexDirection: 'row',
