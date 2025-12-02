@@ -1,0 +1,152 @@
+{
+  "database": "test_database",
+  "collections": {
+    "users": [
+      {
+        "id": "69289eb7a902c9a0f8f65535",
+        "email": "test_script@example.com",
+        "username": "testscript",
+        "xp": 0,
+        "lives": 5,
+        "streak": 0,
+        "level": 1,
+        "last_activity": "2025-11-27 18:55:54.549000",
+        "created_at": "2025-11-27 18:55:51.232000"
+      },
+      {
+        "id": "6928a2e26b1b5ca3057aa91a",
+        "email": "rgironcoronel@gmail.com",
+        "username": "rodogc",
+        "xp": 20,
+        "lives": 0,
+        "streak": 1,
+        "level": 1,
+        "last_activity": "2025-11-30 22:35:29.934000",
+        "created_at": "2025-11-27 19:13:38.993000"
+      },
+      {
+        "id": "6928a6b66b1b5ca3057aa91b",
+        "email": "RGIRONCORONEL@gmail.com",
+        "username": "rodogc",
+        "xp": 360,
+        "lives": 0,
+        "streak": 1,
+        "level": 1,
+        "last_activity": "2025-11-29 00:36:50.188000",
+        "created_at": "2025-11-27 19:29:58.831000"
+      },
+      {
+        "id": "692a3fa324ec6364905747a7",
+        "email": "osielm754@gmail.com",
+        "username": "skymods",
+        "xp": 0,
+        "lives": 3,
+        "streak": 0,
+        "level": 1,
+        "last_activity": "2025-11-29 00:35:14.995000",
+        "created_at": "2025-11-29 00:34:43.618000"
+      },
+      {
+        "id": "692e342ddc67564d642d0729",
+        "email": "jared17@gmail.com",
+        "username": "jared",
+        "xp": 0,
+        "lives": 5,
+        "streak": 0,
+        "level": 1,
+        "last_activity": "2025-12-02 00:39:53.444000",
+        "created_at": "2025-12-02 00:34:53.035000"
+      },
+      {
+        "id": "692e38c1784d134d86242e97",
+        "email": "prueba20251201195423@example.com",
+        "username": "prueba20251201195423",
+        "xp": 0,
+        "lives": 5,
+        "streak": 0,
+        "level": 1,
+        "last_activity": "2025-12-02 00:54:25.781000",
+        "created_at": "2025-12-02 00:54:25.781000"
+      },
+      {
+        "id": "692e38dc784d134d86242e98",
+        "email": "prueba20251201195451@example.com",
+        "username": "prueba20251201195451",
+        "xp": 0,
+        "lives": 5,
+        "streak": 0,
+        "level": 1,
+        "last_activity": "2025-12-02 00:54:52.516000",
+        "created_at": "2025-12-02 00:54:52.046000"
+      },
+      {
+        "id": "692e3cbc933212fd0c222320",
+        "email": "prueba20251201201124@example.com",
+        "username": "prueba20251201201124",
+        "xp": 0,
+        "lives": 5,
+        "streak": 0,
+        "level": 1,
+        "last_activity": "2025-12-02 01:11:25.247000",
+        "created_at": "2025-12-02 01:11:24.881000"
+      }
+    ],
+    "progress": [
+      {
+        "id": "6928c4c0f7f9aa429112f3f4",
+        "user_id": "6928a6b66b1b5ca3057aa91b",
+        "lesson_id": "u1l1",
+        "completed": true,
+        "score": 100,
+        "attempts": 20,
+        "completed_at": "2025-11-27 21:43:29.993000"
+      },
+      {
+        "id": "6928c593f7f9aa429112f3f5",
+        "user_id": "6928a6b66b1b5ca3057aa91b",
+        "lesson_id": "u1l2",
+        "completed": true,
+        "score": 100,
+        "attempts": 14,
+        "completed_at": "2025-11-27 21:42:44.314000"
+      },
+      {
+        "id": "6928ed97f7f9aa429112f3f6",
+        "user_id": "6928a6b66b1b5ca3057aa91b",
+        "lesson_id": "u1l3",
+        "completed": true,
+        "score": 100,
+        "attempts": 1,
+        "completed_at": "2025-11-28 00:32:23.323000"
+      },
+      {
+        "id": "6928f188f7f9aa429112f3f7",
+        "user_id": "6928a6b66b1b5ca3057aa91b",
+        "lesson_id": "u1l4",
+        "completed": true,
+        "score": 100,
+        "attempts": 1,
+        "completed_at": "2025-11-28 00:49:12.718000"
+      },
+      {
+        "id": "692b1779f7f9aa429112f3f8",
+        "user_id": "6928a2e26b1b5ca3057aa91a",
+        "lesson_id": "u1l1",
+        "completed": true,
+        "score": 100,
+        "attempts": 5,
+        "completed_at": "2025-11-30 20:56:05.442000"
+      }
+    ]
+  },
+  "statistics": {
+    "total_users": 8,
+    "total_xp": 380,
+    "total_progress_records": 5,
+    "completed_lessons": 5
+  },
+  "collections_list": [
+    "users",
+    "progress"
+  ]
+}
